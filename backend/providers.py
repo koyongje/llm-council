@@ -121,6 +121,8 @@ async def _query_openai(
     payload: Dict[str, Any] = {"model": model, "input": items}
     if web_search:
         payload["tools"] = [{"type": "web_search"}]
+        # The model otherwise often skips optional search and returns no sources.
+        payload["tool_choice"] = "required"
 
     data = await _post(OPENAI_API_URL, headers, payload, timeout)
     text = ""

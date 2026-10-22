@@ -40,6 +40,7 @@ async def test_openai_uses_responses_api(fake_post):
     assert body["input"][-1]["content"][0]["type"] == "input_file"
     assert body["input"][0] == {"role": "user", "content": "old"}
     assert body["tools"] == [{"type": "web_search"}]
+    assert body["tool_choice"] == "required"
     assert r["sources"] == [{"url": "https://b.com", "title": "B"}]
 
 
