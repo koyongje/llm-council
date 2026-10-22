@@ -2,10 +2,12 @@
 
 import json
 import os
+import uuid
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from pathlib import Path
-from .config import DATA_DIR
+from .config import DATA_DIR, UPLOADS_DIR
+from .providers import PdfFile
 
 
 def ensure_data_dir():
@@ -34,7 +36,8 @@ def create_conversation(conversation_id: str) -> Dict[str, Any]:
         "id": conversation_id,
         "created_at": datetime.utcnow().isoformat(),
         "title": "New Conversation",
-        "messages": []
+        "messages": [],
+        "files": []
     }
 
     # Save to file
@@ -61,7 +64,9 @@ def get_conversation(conversation_id: str) -> Optional[Dict[str, Any]]:
         return None
 
     with open(path, 'r') as f:
-        return json.load(f)
+        conversation = json.load(f)
+    conversation.setdefault("files", [])
+    return conversation
 
 
 def save_conversation(conversation: Dict[str, Any]):
@@ -170,3 +175,45 @@ def update_conversation_title(conversation_id: str, title: str):
 
     conversation["title"] = title
     save_conversation(conversation)
+
+
+def _uploads_path(conversation_id: str, file_id: str) -> Path:
+    return Path(UPLOADS_DIR) / conversation_id / f"{file_id}.pdf"
+
+
+def add_file(conversation_id: str, filename: str, data: bytes) -> Dict[str, Any]:
+    """
+    Store a PDF for a conversation and record it in the conversation.
+
+    Returns:
+        File metadata dict: {id, filename, size, uploaded_at}
+    """
+    conversation = get_conversation(conversation_id)
+    if conversation is None:
+        raise ValueError(f"Conversation {conversation_id} not found")
+
+    file_id = uuid.uuid4().hex
+    path = _uploads_path(conversation_id, file_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+
+    entry = {
+        "id": file_id,
+        "filename": filename,
+        "size": len(data),
+        "uploaded_at": datetime.utcnow().isoformat()
+    }
+    conversation["files"].append(entry)
+    save_conversation(conversation)
+    return entry
+
+
+def get_files(conversation_id: str) -> List[PdfFile]:
+    """Load the bytes of every file attached to a conversation."""
+    conversation = get_conversation(conversation_id)
+    if conversation is None:
+        return []
+    return [
+        PdfFile(filename=f["filename"], data=_uploads_path(conversation_id, f["id"]).read_bytes())
+        for f in conversation.get("files", [])
+    ]

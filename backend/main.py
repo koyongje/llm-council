@@ -1,6 +1,6 @@
 """FastAPI backend for LLM Council."""
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -10,6 +10,7 @@ import json
 import asyncio
 
 from . import storage
+from .config import MAX_CONVERSATION_FILES_BYTES
 from .council import run_full_council, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings
 
 app = FastAPI(title="LLM Council API")
@@ -48,6 +49,7 @@ class Conversation(BaseModel):
     created_at: str
     title: str
     messages: List[Dict[str, Any]]
+    files: List[Dict[str, Any]] = []
 
 
 @app.get("/")
@@ -77,6 +79,24 @@ async def get_conversation(conversation_id: str):
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conversation
+
+
+@app.post("/api/conversations/{conversation_id}/files")
+async def upload_file(conversation_id: str, file: UploadFile = File(...)):
+    """Attach a PDF reference file to a conversation."""
+    conversation = storage.get_conversation(conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    data = await file.read()
+    if not data.startswith(b"%PDF-"):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+
+    existing = sum(f["size"] for f in conversation["files"])
+    if existing + len(data) > MAX_CONVERSATION_FILES_BYTES:
+        raise HTTPException(status_code=400, detail="Attachments for this conversation would exceed 14 MB")
+
+    return storage.add_file(conversation_id, file.filename or "document.pdf", data)
 
 
 @app.post("/api/conversations/{conversation_id}/message")

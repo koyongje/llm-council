@@ -29,3 +29,9 @@ ANTHROPIC_MAX_TOKENS = 16000
 
 # Data directory for conversation storage
 DATA_DIR = "data/conversations"
+
+# Uploaded reference files (PDFs), stored per conversation
+UPLOADS_DIR = "data/uploads"
+
+# Max total size of PDFs attached to one conversation
+MAX_CONVERSATION_FILES_BYTES = 14 * 1024 * 1024
