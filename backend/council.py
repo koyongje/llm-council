@@ -178,7 +178,7 @@ async def stage3_synthesize_final(
     """
     # Build comprehensive context for chairman
     stage1_text = "\n\n".join([
-        f"Model: {result['model']}\nResponse: {result.get('body', result['response'])}"
+        f"Model: {result['model']}\nResponse: {result['response']}"
         for result in stage1_results
     ])
 

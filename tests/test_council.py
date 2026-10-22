@@ -53,6 +53,7 @@ async def test_stage1_uses_web_search_files_history_and_appends_sources(fake_cou
     assert call["web_search"] is True and call["files"] == [PDF]
     assert call["messages"][:2] == [{"role": "user", "content": "h"}, {"role": "assistant", "content": "ha"}]
     assert "출처 미확인" in call["messages"][-1]["content"]
+    assert out[0]["body"] == "ans"
     assert out[0]["response"] == "ans\n\n출처:\n- [A](https://a.com)" and out[0]["sources"] == [{"url": "https://a.com", "title": "A"}]
 
 
@@ -120,3 +121,10 @@ def test_sse_all_stage1_failed_skips_later_stages(tmp_path, monkeypatch):
     assert events[2]["data"] == {"model": "error", "response": council.ALL_FAILED_RESPONSE}
     last = storage.get_conversation(cid)["messages"][-1]
     assert last["stage1"] == [] and last["stage3"]["model"] == "error"
+
+
+async def test_stage3_chairman_sees_sources_block(fake_council):
+    s1 = [{"model": "m", "body": "b", "response": "b\n\n출처:\n- [A](https://a.com)", "sources": [{"url": "https://a.com", "title": "A"}]}]
+    await stage3_synthesize_final("q", s1, S2)
+    prompt = fake_council.single_calls[-1]["messages"][-1]["content"]
+    assert "출처:" in prompt and "https://a.com" in prompt
