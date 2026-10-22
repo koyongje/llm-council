@@ -63,3 +63,18 @@ async def test_no_tools_when_web_search_off(fake_post):
 async def test_gemini_without_candidates_returns_none(fake_post):
     fake_post.reply = {"promptFeedback": {"blockReason": "SAFETY"}}
     assert await query_model("google/gemini-3.1-pro-preview", [{"role": "user", "content": "q"}]) is None
+
+
+async def test_openai_without_message_item_returns_none(fake_post):
+    fake_post.reply = {"output": [{"type": "web_search_call"}]}
+    assert await query_model("openai/gpt-5.1", [{"role": "user", "content": "q"}]) is None
+
+
+async def test_gemini_recitation_without_text_returns_none(fake_post):
+    fake_post.reply = {"candidates": [{"finishReason": "RECITATION"}]}
+    assert await query_model("google/gemini-3.1-pro-preview", [{"role": "user", "content": "q"}]) is None
+
+
+async def test_whitespace_only_content_returns_none(fake_post):
+    fake_post.reply = {"candidates": [{"content": {"parts": [{"text": "  \n"}]}}]}
+    assert await query_model("google/gemini-3.1-pro-preview", [{"role": "user", "content": "q"}]) is None

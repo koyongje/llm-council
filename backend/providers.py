@@ -208,7 +208,11 @@ async def query_model(
         provider, model_id = model.split("/", 1)
         if provider not in PROVIDERS:
             raise ValueError(f"Unknown provider '{provider}' (expected one of {list(PROVIDERS)})")
-        return await PROVIDERS[provider](model_id, messages, timeout, files, web_search)
+        result = await PROVIDERS[provider](model_id, messages, timeout, files, web_search)
+        if not (result.get("content") or "").strip():
+            print(f"Error querying model {model}: empty response content")
+            return None
+        return result
 
     except Exception as e:
         print(f"Error querying model {model}: {type(e).__name__}: {e}")

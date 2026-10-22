@@ -212,6 +212,10 @@ Provide a clear, well-reasoned final answer that represents the council's collec
     response = await query_model(
         CHAIRMAN_MODEL, messages, files=files or [], web_search=False
     )
+    if response is None and files:
+        # Large PDFs can push the request over a provider limit; the stage 1
+        # responses already carry the file's content, so retry without them.
+        response = await query_model(CHAIRMAN_MODEL, messages, files=[], web_search=False)
 
     if response is None:
         # Fallback if chairman fails

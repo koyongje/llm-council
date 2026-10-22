@@ -128,3 +128,47 @@ async def test_stage3_chairman_sees_sources_block(fake_council):
     await stage3_synthesize_final("q", s1, S2)
     prompt = fake_council.single_calls[-1]["messages"][-1]["content"]
     assert "출처:" in prompt and "https://a.com" in prompt
+
+
+async def test_stage3_retries_without_files_when_chairman_fails_with_files(monkeypatch):
+    calls = []
+
+    async def single(model, messages, timeout=300.0, files=None, web_search=False):
+        calls.append(files)
+        return None if files else {"content": "see [x](https://fake.com)", "sources": []}
+
+    monkeypatch.setattr(council, "query_model", single)
+    r = await stage3_synthesize_final("q", S1, S2, files=[PDF], verified_urls=set())
+    assert calls == [[PDF], []]
+    assert r["response"] == "see [x](https://fake.com) ⚠️ 미검증"
+
+
+async def test_stage3_error_response_when_both_attempts_fail(monkeypatch):
+    calls = []
+
+    async def single(model, messages, timeout=300.0, files=None, web_search=False):
+        calls.append(files)
+        return None
+
+    monkeypatch.setattr(council, "query_model", single)
+    r = await stage3_synthesize_final("q", S1, S2, files=[PDF])
+    assert len(calls) == 2
+    assert r["response"] == council.CHAIRMAN_ERROR_RESPONSE
+
+
+async def test_stage3_no_retry_without_files(monkeypatch):
+    calls = []
+
+    async def single(model, messages, timeout=300.0, files=None, web_search=False):
+        calls.append(files)
+        return None
+
+    monkeypatch.setattr(council, "query_model", single)
+    await stage3_synthesize_final("q", S1, S2)
+    assert len(calls) == 1
+
+
+def test_sse_payload_keeps_korean_unescaped():
+    from backend.main import _sse
+    out = _sse({"type": "x", "data": "한글"})
+    assert "한글" in out and out.endswith("\n\n")

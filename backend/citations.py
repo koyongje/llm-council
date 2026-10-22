@@ -7,7 +7,13 @@ Source = Dict[str, str]
 
 MARKER = " ⚠️ 미검증"
 
-_URL_PATTERN = re.compile(r"\[[^\]]*\]\((https?://(?:[^()\s]|\([^()\s]*\))+)\)|https?://[^\s)\]]+")
+_ASCII_URL_CHARS = r"A-Za-z0-9\-._~:/?#@!$&'*+,;=%"
+_TRAILING_PUNCT = "*>.,;:!?"
+
+_URL_PATTERN = re.compile(
+    r"\[[^\]]*\]\((https?://(?:[^()\s]|\([^()\s]*\))+)\)"
+    rf"|https?://(?:[{_ASCII_URL_CHARS}]|\([{_ASCII_URL_CHARS}]*\))+"
+)
 
 
 def format_sources(sources: List[Source]) -> str:
@@ -28,7 +34,7 @@ def format_sources(sources: List[Source]) -> str:
 
 def normalize_url(url: str) -> str:
     """Lowercase scheme/host and strip trailing slash and punctuation."""
-    url = url.rstrip(".,;)").rstrip("/")
+    url = url.rstrip(".,;:!?*)").rstrip("/")
     match = re.match(r"^([A-Za-z][A-Za-z0-9+.-]*://)([^/?#]*)(.*)$", url)
     if match:
         scheme, host, rest = match.groups()
@@ -60,7 +66,7 @@ def mark_unverified(text: str, verified: Set[str]) -> str:
         if match.group(1) is not None:
             url, core, tail = match.group(1), whole, ""
         else:
-            core = whole.rstrip(".,;")
+            core = whole.rstrip(_TRAILING_PUNCT)
             url, tail = core, whole[len(core):]
         if normalize_url(url) in verified:
             return whole

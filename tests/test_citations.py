@@ -37,3 +37,35 @@ def test_mark_unverified_keeps_parenthesised_link_intact():
 def test_mark_unverified_verified_parenthesised_link_unchanged():
     text = f"[w]({WIKI}) end"
     assert mark_unverified(text, {normalize_url(WIKI)}) == text
+
+import pytest
+
+K = "https://kosis.kr/stat"
+VERIFIED = {normalize_url(K)}
+M = " ⚠️ 미검증"
+
+@pytest.mark.parametrize("template", [
+    "{u}에서 확인", "**{u}**", "<{u}>", "| {u}|", "{u}。", "{u}:", "{u}!", "{u}?", "({u})",
+])
+def test_verified_bare_url_in_context_not_marked(template):
+    text = template.format(u=K)
+    assert mark_unverified(text, VERIFIED) == text
+
+@pytest.mark.parametrize("template,expected", [
+    ("{u}에서 확인", "{u}" + M + "에서 확인"),
+    ("**{u}**", "**{u}" + M + "**"),
+    ("<{u}>", "<{u}" + M + ">"),
+    ("| {u}|", "| {u}" + M + "|"),
+    ("{u}。", "{u}" + M + "。"),
+    ("{u}:", "{u}" + M + ":"),
+    ("{u}!", "{u}" + M + "!"),
+])
+def test_unverified_bare_url_marker_placed_right_after_url(template, expected):
+    u = "https://fake.org/x"
+    out = mark_unverified(template.format(u=u), set())
+    assert out == expected.format(u=u)
+    assert mark_unverified(out, set()) == out
+
+def test_bare_url_with_balanced_parens_kept_whole():
+    out = mark_unverified(f"see {WIKI} end", set())
+    assert out == f"see {WIKI}{M} end"

@@ -26,6 +26,11 @@ app.add_middleware(
 )
 
 
+def _sse(payload: Dict[str, Any]) -> str:
+    """Format one Server-Sent Event; keep Korean text unescaped to shrink payloads."""
+    return "data: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
+
+
 class CreateConversationRequest(BaseModel):
     """Request to create a new conversation."""
     pass
@@ -174,41 +179,41 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                 title_task = asyncio.create_task(generate_conversation_title(request.content))
 
             # Stage 1: Collect responses
-            yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
+            yield _sse({'type': 'stage1_start'})
             stage1_results = await stage1_collect_responses(request.content, history, files)
-            yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
+            yield _sse({'type': 'stage1_complete', 'data': stage1_results})
 
             if not stage1_results:
                 # Same outcome as run_full_council: skip stages 2 and 3
                 stage3_result = {"model": "error", "response": ALL_FAILED_RESPONSE}
-                yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
+                yield _sse({'type': 'stage3_complete', 'data': stage3_result})
                 if title_task:
                     title = await title_task
                     storage.update_conversation_title(conversation_id, title)
-                    yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
+                    yield _sse({'type': 'title_complete', 'data': {'title': title}})
                 storage.add_assistant_message(conversation_id, [], [], stage3_result)
-                yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+                yield _sse({'type': 'complete'})
                 return
 
             # Stage 2: Collect rankings
-            yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
+            yield _sse({'type': 'stage2_start'})
             stage2_results, label_to_model = await stage2_collect_rankings(request.content, stage1_results, history, files)
             aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
-            yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})}\n\n"
+            yield _sse({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})
 
             # Stage 3: Synthesize final answer
-            yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
+            yield _sse({'type': 'stage3_start'})
             stage3_result = await stage3_synthesize_final(
                 request.content, stage1_results, stage2_results, history, files,
                 collect_verified_urls(prior, stage1_results)
             )
-            yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
+            yield _sse({'type': 'stage3_complete', 'data': stage3_result})
 
             # Wait for title generation if it was started
             if title_task:
                 title = await title_task
                 storage.update_conversation_title(conversation_id, title)
-                yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
+                yield _sse({'type': 'title_complete', 'data': {'title': title}})
 
             # Save complete assistant message
             storage.add_assistant_message(
@@ -219,11 +224,11 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             )
 
             # Send completion event
-            yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+            yield _sse({'type': 'complete'})
 
         except Exception as e:
             # Send error event
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            yield _sse({'type': 'error', 'message': str(e)})
 
     return StreamingResponse(
         event_generator(),

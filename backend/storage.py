@@ -1,6 +1,7 @@
 """JSON-based storage for conversations."""
 
 import json
+import logging
 import os
 import uuid
 from datetime import datetime
@@ -8,6 +9,18 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 from .config import DATA_DIR, UPLOADS_DIR
 from .providers import PdfFile
+
+
+logger = logging.getLogger(__name__)
+
+
+def is_valid_id(conversation_id: str) -> bool:
+    """Conversation ids are UUIDs; anything else could escape the data directories."""
+    try:
+        uuid.UUID(conversation_id)
+    except (ValueError, AttributeError, TypeError):
+        return False
+    return True
 
 
 def ensure_data_dir():
@@ -58,6 +71,8 @@ def get_conversation(conversation_id: str) -> Optional[Dict[str, Any]]:
     Returns:
         Conversation dict or None if not found
     """
+    if not is_valid_id(conversation_id):
+        return None
     path = get_conversation_path(conversation_id)
 
     if not os.path.exists(path):
@@ -213,7 +228,11 @@ def get_files(conversation_id: str) -> List[PdfFile]:
     conversation = get_conversation(conversation_id)
     if conversation is None:
         return []
-    return [
-        PdfFile(filename=f["filename"], data=_uploads_path(conversation_id, f["id"]).read_bytes())
-        for f in conversation.get("files", [])
-    ]
+    files = []
+    for f in conversation.get("files", []):
+        path = _uploads_path(conversation_id, f["id"])
+        try:
+            files.append(PdfFile(filename=f["filename"], data=path.read_bytes()))
+        except FileNotFoundError:
+            logger.warning("Skipping missing attachment %s for conversation %s", path, conversation_id)
+    return files
