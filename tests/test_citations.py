@@ -26,3 +26,14 @@ def test_mark_unverified_flags_only_unknown_links():
 def test_mark_unverified_is_idempotent():
     once = mark_unverified("[bad](https://bad.com)", set())
     assert mark_unverified(once, set()) == once
+
+WIKI = "https://en.wikipedia.org/wiki/Foo_(bar)"
+
+def test_mark_unverified_keeps_parenthesised_link_intact():
+    out = mark_unverified(f"[w]({WIKI}) end", set())
+    assert out == f"[w]({WIKI}) ⚠️ 미검증 end"
+    assert mark_unverified(out, set()) == out
+
+def test_mark_unverified_verified_parenthesised_link_unchanged():
+    text = f"[w]({WIKI}) end"
+    assert mark_unverified(text, {normalize_url(WIKI)}) == text

@@ -7,7 +7,7 @@ Source = Dict[str, str]
 
 MARKER = " ⚠️ 미검증"
 
-_URL_PATTERN = re.compile(r"\[[^\]]*\]\((https?://[^)\s]+)\)|https?://[^\s)\]]+")
+_URL_PATTERN = re.compile(r"\[[^\]]*\]\((https?://(?:[^()\s]|\([^()\s]*\))+)\)|https?://[^\s)\]]+")
 
 
 def format_sources(sources: List[Source]) -> str:
