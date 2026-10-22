@@ -93,7 +93,7 @@ Then open http://localhost:5173 in your browser.
 - **Web search:** every council model searches the web in Stage 1; its sources are listed under its response. Links in the final answer that did not come from a search are marked `⚠️ 미검증`.
 - **Table output:** when files are attached, the final answer presents its findings as a table.
 - Follow-up questions keep context (previous question and final answer).
-- Verify setup with `uv run python -m backend.check_models --full` (costs a few cents).
+- Verify setup with `uv run python -m backend.check_models --full` (makes real paid API calls).
 
 ## Tech Stack
 

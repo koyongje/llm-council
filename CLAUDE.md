@@ -33,7 +33,7 @@ Backend tests: `uv run pytest` (httpx is faked; no network). `ANTHROPIC_API_KEY`
 
 ```bash
 uv run python -m backend.check_models   # pings every configured model, exits 1 on any failure
-uv run python -m backend.check_models --full   # live: sends tests/fixtures/sample.pdf + web search to every council model; exits 1 on FAIL or 0 sources (costs a few cents)
+uv run python -m backend.check_models --full   # live: sends tests/fixtures/sample.pdf + web search to every council model; exits 1 on FAIL or 0 sources (makes real paid API calls)
 ``` The root `main.py` is an unused uv stub; the real entry point is `backend/main.py`.
 
 ## Architecture
@@ -41,23 +41,25 @@ uv run python -m backend.check_models --full   # live: sends tests/fixtures/samp
 ### Request flow
 
 ```
-User query
-  → Stage 1: query all COUNCIL_MODELS in parallel → [{model, response}]
-  → Stage 2: anonymize as "Response A/B/C…", each model evaluates + ranks all
-             → [{model, ranking, parsed_ranking}] + label_to_model
+User query (+ history: prior user questions and chairman answers)
+  → Stage 1: all COUNCIL_MODELS in parallel, web search on + attached PDFs
+             → [{model, response, sources}] (sources block appended to the text)
+  → Stage 2: anonymize as "Response A/B/C…" (sources block stripped), PDFs attached,
+             each model evaluates + ranks all → [{model, ranking, parsed_ranking}] + label_to_model
   → aggregate rankings (average rank position across evaluators)
-  → Stage 3: CHAIRMAN_MODEL synthesizes final answer from stage1 + stage2
+  → Stage 3: CHAIRMAN_MODEL synthesizes from stage1 + stage2 with PDFs attached;
+             links not found in any search result are marked ⚠️ 미검증
 ```
 
-Each turn is **single-turn**: only the current user message is sent to the models; prior conversation history is not included.
+Prior turns are sent to the models as history: earlier user questions and chairman (Stage 3) answers only. Earlier Stage 1/2 texts are never included.
 
 ### Backend (`backend/`, FastAPI)
 
 - `config.py`: `COUNCIL_MODELS`, `CHAIRMAN_MODEL`, `TITLE_MODEL` as `provider/model-id` (provider: `anthropic` | `openai` | `google`), API keys from `.env`, `DATA_DIR`.
-- `providers.py`: `query_model()` routes by the `provider/` prefix to raw-httpx clients for Anthropic Messages, OpenAI Chat Completions and Gemini `generateContent`; `query_models_parallel()` uses `asyncio.gather`. To add a provider, add a function to `PROVIDERS`. `query_model(..., files=, web_search=)` returns `{content, reasoning_details, sources:[{url,title}]}`; PDFs go as Anthropic `document` blocks, OpenAI Responses `input_file` (OpenAI uses `/v1/responses`, `tool_choice: required` for search) and Gemini `inline_data`; search is Anthropic `web_search_20260209`, OpenAI `web_search`, Gemini `google_search`. Failures return `None` and are logged; callers drop failed models and continue (graceful degradation).
+- `providers.py`: `query_model()` routes by the `provider/` prefix to raw-httpx clients for Anthropic Messages, OpenAI Responses and Gemini `generateContent`; `query_models_parallel()` uses `asyncio.gather`. To add a provider, add a function to `PROVIDERS`. `query_model(..., files=, web_search=)` returns `{content, reasoning_details, sources:[{url,title}]}`; PDFs go as Anthropic `document` blocks, OpenAI Responses `input_file` (OpenAI uses `/v1/responses`, `tool_choice: required` for search) and Gemini `inline_data`; search is Anthropic `web_search_20260209`, OpenAI `web_search`, Gemini `google_search`. Failures return `None` and are logged; callers drop failed models and continue (graceful degradation).
 - `council.py`: stage functions, `parse_ranking_from_text()`, `calculate_aggregate_rankings()`, `run_full_council()`, and `generate_conversation_title()` (uses `TITLE_MODEL`).
 - `citations.py`: `format_sources()` builds the sources block appended to Stage 1 responses; `collect_verified_urls()` + `mark_unverified()` tag chairman links not seen in any search result with `⚠️ 미검증`.
-- `storage.py`: one JSON file per conversation in `data/conversations/` (`{id, created_at, title, messages[]}`). Assistant messages store `{role, stage1, stage2, stage3}` only.
+- `storage.py`: one JSON file per conversation in `data/conversations/` (`{id, created_at, title, messages[], files[]}`). Assistant messages store `{role, stage1, stage2, stage3}` only.
 - `main.py`: two send endpoints:
   - `POST /api/conversations/{id}/message`: batch, returns `{stage1, stage2, stage3, metadata}`.
   - `POST /api/conversations/{id}/message/stream`: **SSE, used by the frontend**. Emits `stage1_start/complete`, `stage2_start/complete` (with metadata), `stage3_start/complete`, `title_complete`, `complete`, or `error`. Title generation runs concurrently with the stages.
