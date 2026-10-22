@@ -86,6 +86,15 @@ npm run dev
 
 Then open http://localhost:5173 in your browser.
 
+## Reference files
+
+- **Attach a PDF** with the attach button in the chat input; the file is sent to every model in all three stages and stays with the conversation.
+- **Limit:** PDF only, 14 MB total per conversation.
+- **Web search:** every council model searches the web in Stage 1; its sources are listed under its response. Links in the final answer that did not come from a search are marked `⚠️ 미검증`.
+- **Table output:** when files are attached, the final answer presents its findings as a table.
+- Follow-up questions keep context (previous question and final answer).
+- Verify setup with `uv run python -m backend.check_models --full` (costs a few cents).
+
 ## Tech Stack
 
 - **Backend:** FastAPI (Python 3.10+), async httpx, Anthropic / OpenAI / Gemini APIs

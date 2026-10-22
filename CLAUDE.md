@@ -29,10 +29,11 @@ cd frontend && npm run lint          # ESLint
 cd frontend && npm run build         # Vite production build
 ```
 
-There is no test suite. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `GEMINI_API_KEY` must be set in a root `.env` file (`load_dotenv(override=True)`: `.env` wins over OS environment variables). Check keys and model ids with:
+Backend tests: `uv run pytest` (httpx is faked; no network). `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` and `GEMINI_API_KEY` must be set in a root `.env` file (`load_dotenv(override=True)`: `.env` wins over OS environment variables). Check keys and model ids with:
 
 ```bash
 uv run python -m backend.check_models   # pings every configured model, exits 1 on any failure
+uv run python -m backend.check_models --full   # live: sends tests/fixtures/sample.pdf + web search to every council model; exits 1 on FAIL or 0 sources (costs a few cents)
 ``` The root `main.py` is an unused uv stub; the real entry point is `backend/main.py`.
 
 ## Architecture
@@ -53,12 +54,14 @@ Each turn is **single-turn**: only the current user message is sent to the model
 ### Backend (`backend/`, FastAPI)
 
 - `config.py`: `COUNCIL_MODELS`, `CHAIRMAN_MODEL`, `TITLE_MODEL` as `provider/model-id` (provider: `anthropic` | `openai` | `google`), API keys from `.env`, `DATA_DIR`.
-- `providers.py`: `query_model()` routes by the `provider/` prefix to raw-httpx clients for Anthropic Messages, OpenAI Chat Completions and Gemini `generateContent`; `query_models_parallel()` uses `asyncio.gather`. To add a provider, add a function to `PROVIDERS`. Failures return `None` and are logged; callers drop failed models and continue (graceful degradation).
+- `providers.py`: `query_model()` routes by the `provider/` prefix to raw-httpx clients for Anthropic Messages, OpenAI Chat Completions and Gemini `generateContent`; `query_models_parallel()` uses `asyncio.gather`. To add a provider, add a function to `PROVIDERS`. `query_model(..., files=, web_search=)` returns `{content, reasoning_details, sources:[{url,title}]}`; PDFs go as Anthropic `document` blocks, OpenAI Responses `input_file` (OpenAI uses `/v1/responses`, `tool_choice: required` for search) and Gemini `inline_data`; search is Anthropic `web_search_20260209`, OpenAI `web_search`, Gemini `google_search`. Failures return `None` and are logged; callers drop failed models and continue (graceful degradation).
 - `council.py`: stage functions, `parse_ranking_from_text()`, `calculate_aggregate_rankings()`, `run_full_council()`, and `generate_conversation_title()` (uses `TITLE_MODEL`).
+- `citations.py`: `format_sources()` builds the sources block appended to Stage 1 responses; `collect_verified_urls()` + `mark_unverified()` tag chairman links not seen in any search result with `⚠️ 미검증`.
 - `storage.py`: one JSON file per conversation in `data/conversations/` (`{id, created_at, title, messages[]}`). Assistant messages store `{role, stage1, stage2, stage3}` only.
 - `main.py`: two send endpoints:
   - `POST /api/conversations/{id}/message`: batch, returns `{stage1, stage2, stage3, metadata}`.
   - `POST /api/conversations/{id}/message/stream`: **SSE, used by the frontend**. Emits `stage1_start/complete`, `stage2_start/complete` (with metadata), `stage3_start/complete`, `title_complete`, `complete`, or `error`. Title generation runs concurrently with the stages.
+  - `POST /api/conversations/{id}/files`: PDF-only upload, 14 MB total per conversation; files are stored with the conversation and passed to every stage.
   - Changes to stage behavior must be mirrored in both endpoints (the stream endpoint calls stage functions directly, not `run_full_council`).
 
 ### Frontend (`frontend/src/`, React 19 + Vite)
@@ -76,3 +79,4 @@ Each turn is **single-turn**: only the current user message is sent to the model
 - **Relative imports** in `backend/` (`from .config import …`): always run as `python -m backend.main` from the project root.
 - **Markdown rendering**: wrap every `ReactMarkdown` in `<div className="markdown-content">` (styles in `index.css`).
 - **Styling**: light theme, primary color `#4a90e2`; Stage 3 uses a green tint (`#f0fff0`).
+- **Reference files & web search**: web search is always on in Stage 1 (sources block appended to each response); PDFs go to Stages 1-3. Stage 2 sees responses *without* the sources block. History sent to models is only prior user question + chairman answer. The chairman emits a table only when files are attached, and unverifiable URLs are marked `⚠️ 미검증`. Per-conversation PDF limit is 14 MB (provider request size caps).
