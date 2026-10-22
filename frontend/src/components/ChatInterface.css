@@ -161,3 +161,43 @@
   background: #ccc;
   border-color: #ccc;
 }
+
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 24px 0;
+  background: #fafafa;
+  border-top: 1px solid #e0e0e0;
+}
+
+.file-chip {
+  padding: 4px 10px;
+  background: #eaf2fc;
+  border: 1px solid #4a90e2;
+  border-radius: 14px;
+  font-size: 13px;
+  color: #2c5f9e;
+}
+
+.upload-error {
+  width: 100%;
+  color: #d32f2f;
+  font-size: 13px;
+}
+
+.attach-button {
+  padding: 10px 14px;
+  background: #ffffff;
+  border: 1px solid #4a90e2;
+  border-radius: 6px;
+  color: #4a90e2;
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.attach-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

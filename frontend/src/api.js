@@ -47,6 +47,29 @@ export const api = {
   },
 
   /**
+   * Upload a PDF reference file to a conversation.
+   */
+  async uploadFile(conversationId, file) {
+    const form = new FormData();
+    form.append('file', file);
+    const response = await fetch(
+      `${API_BASE}/api/conversations/${conversationId}/files`,
+      { method: 'POST', body: form }
+    );
+    if (!response.ok) {
+      let detail = 'Failed to upload file';
+      try {
+        const body = await response.json();
+        if (typeof body.detail === 'string') detail = body.detail;
+      } catch {
+        // keep default message
+      }
+      throw new Error(detail);
+    }
+    return response.json();
+  },
+
+  /**
    * Send a message in a conversation.
    */
   async sendMessage(conversationId, content) {

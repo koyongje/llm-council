@@ -8,10 +8,29 @@ import './ChatInterface.css';
 export default function ChatInterface({
   conversation,
   onSendMessage,
+  onUploadFile,
   isLoading,
 }) {
   const [input, setInput] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
   const messagesEndRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  const handleFilePick = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setIsUploading(true);
+    try {
+      await onUploadFile(file);
+      setUploadError('');
+    } catch (err) {
+      setUploadError(err.message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -120,26 +139,50 @@ export default function ChatInterface({
         <div ref={messagesEndRef} />
       </div>
 
-      {conversation.messages.length === 0 && (
-        <form className="input-form" onSubmit={handleSubmit}>
-          <textarea
-            className="message-input"
-            placeholder="Ask your question... (Shift+Enter for new line, Enter to send)"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            disabled={isLoading}
-            rows={3}
-          />
-          <button
-            type="submit"
-            className="send-button"
-            disabled={!input.trim() || isLoading}
-          >
-            Send
-          </button>
-        </form>
+      {(conversation.files?.length > 0 || uploadError) && (
+        <div className="attachments">
+          {conversation.files?.map((f) => (
+            <span key={f.id} className="file-chip">
+              {f.filename} ({(f.size / (1024 * 1024)).toFixed(1)} MB)
+            </span>
+          ))}
+          {uploadError && <div className="upload-error">{uploadError}</div>}
+        </div>
       )}
+
+      <form className="input-form" onSubmit={handleSubmit}>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/pdf"
+          onChange={handleFilePick}
+          hidden
+        />
+        <button
+          type="button"
+          className="attach-button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isLoading || isUploading}
+        >
+          {isUploading ? 'Uploading...' : 'Attach PDF'}
+        </button>
+        <textarea
+          className="message-input"
+          placeholder="Ask your question... (Shift+Enter for new line, Enter to send)"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          disabled={isLoading}
+          rows={3}
+        />
+        <button
+          type="submit"
+          className="send-button"
+          disabled={!input.trim() || isLoading}
+        >
+          Send
+        </button>
+      </form>
     </div>
   );
 }
