@@ -1,11 +1,46 @@
 """3-stage LLM Council orchestration."""
 
-from typing import List, Dict, Any, Tuple
-from .providers import query_models_parallel, query_model
+from typing import List, Dict, Any, Optional, Set, Tuple
+from .providers import query_models_parallel, query_model, PdfFile
 from .config import COUNCIL_MODELS, CHAIRMAN_MODEL, TITLE_MODEL
+from .citations import format_sources, collect_verified_urls, mark_unverified
+
+CHAIRMAN_ERROR_RESPONSE = "Error: Unable to generate final synthesis."
+
+STAGE1_INSTRUCTIONS = """---
+Instructions: Use web search to verify any figures, statistics or facts that may have changed recently, and prefer the most recent data. Next to each figure you state, put its source URL as a markdown link. If you could not verify a figure, mark it "출처 미확인". If documents are attached, base your review on their content."""
+
+CHAIRMAN_URL_RULE = 'Use only URLs that appear in the council responses above; never invent new URLs. If a claim has no source, write "출처 미확인".'
+
+TABLE_INSTRUCTION = """The user attached document(s). Start with a 1-2 sentence summary, then present your answer as a markdown table with exactly these columns:
+| # | 기획서 위치 | 현재 내용 | 수정 제안 (최신 데이터) | 근거·출처 |
+Add brief notes below the table only if needed. If the user's question is not a request for revisions (for example, a follow-up about one item), answer in free form instead."""
 
 
-async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
+def build_history(prior_messages: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    """Turn prior user/assistant turns into chat history, skipping unpaired or failed turns."""
+    history: List[Dict[str, str]] = []
+    for user, assistant in zip(prior_messages, prior_messages[1:]):
+        if user.get("role") != "user" or assistant.get("role") != "assistant":
+            continue
+        response = (assistant.get("stage3") or {}).get("response")
+        if not response or response == CHAIRMAN_ERROR_RESPONSE:
+            continue
+        history.append({"role": "user", "content": user["content"]})
+        history.append({"role": "assistant", "content": response})
+    return history
+
+
+def build_stage1_prompt(user_query: str) -> str:
+    """The user query followed by the web-search and citation instructions."""
+    return f"{user_query}\n\n{STAGE1_INSTRUCTIONS}"
+
+
+async def stage1_collect_responses(
+    user_query: str,
+    history: Optional[List[Dict[str, str]]] = None,
+    files: Optional[List[PdfFile]] = None,
+) -> List[Dict[str, Any]]:
     """
     Stage 1: Collect individual responses from all council models.
 
@@ -15,18 +50,22 @@ async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
     Returns:
         List of dicts with 'model' and 'response' keys
     """
-    messages = [{"role": "user", "content": user_query}]
+    messages = (history or []) + [{"role": "user", "content": build_stage1_prompt(user_query)}]
 
     # Query all models in parallel
-    responses = await query_models_parallel(COUNCIL_MODELS, messages)
+    responses = await query_models_parallel(
+        COUNCIL_MODELS, messages, files=files or [], web_search=True
+    )
 
     # Format results
     stage1_results = []
     for model, response in responses.items():
         if response is not None:  # Only include successful responses
+            sources = response.get('sources') or []
             stage1_results.append({
                 "model": model,
-                "response": response.get('content', '')
+                "response": response.get('content', '') + format_sources(sources),
+                "sources": sources
             })
 
     return stage1_results
@@ -34,7 +73,9 @@ async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
 
 async def stage2_collect_rankings(
     user_query: str,
-    stage1_results: List[Dict[str, Any]]
+    stage1_results: List[Dict[str, Any]],
+    history: Optional[List[Dict[str, str]]] = None,
+    files: Optional[List[PdfFile]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
     """
     Stage 2: Each model ranks the anonymized responses.
@@ -92,10 +133,12 @@ FINAL RANKING:
 
 Now provide your evaluation and ranking:"""
 
-    messages = [{"role": "user", "content": ranking_prompt}]
+    messages = (history or []) + [{"role": "user", "content": ranking_prompt}]
 
     # Get rankings from all council models in parallel
-    responses = await query_models_parallel(COUNCIL_MODELS, messages)
+    responses = await query_models_parallel(
+        COUNCIL_MODELS, messages, files=files or [], web_search=False
+    )
 
     # Format results
     stage2_results = []
@@ -115,7 +158,10 @@ Now provide your evaluation and ranking:"""
 async def stage3_synthesize_final(
     user_query: str,
     stage1_results: List[Dict[str, Any]],
-    stage2_results: List[Dict[str, Any]]
+    stage2_results: List[Dict[str, Any]],
+    history: Optional[List[Dict[str, str]]] = None,
+    files: Optional[List[PdfFile]] = None,
+    verified_urls: Optional[Set[str]] = None,
 ) -> Dict[str, Any]:
     """
     Stage 3: Chairman synthesizes final response.
@@ -154,23 +200,27 @@ Your task as Chairman is to synthesize all of this information into a single, co
 - The peer rankings and what they reveal about response quality
 - Any patterns of agreement or disagreement
 
+{CHAIRMAN_URL_RULE}
+{TABLE_INSTRUCTION + chr(10) if files else ''}
 Provide a clear, well-reasoned final answer that represents the council's collective wisdom:"""
 
-    messages = [{"role": "user", "content": chairman_prompt}]
+    messages = (history or []) + [{"role": "user", "content": chairman_prompt}]
 
     # Query the chairman model
-    response = await query_model(CHAIRMAN_MODEL, messages)
+    response = await query_model(
+        CHAIRMAN_MODEL, messages, files=files or [], web_search=False
+    )
 
     if response is None:
         # Fallback if chairman fails
         return {
             "model": CHAIRMAN_MODEL,
-            "response": "Error: Unable to generate final synthesis."
+            "response": CHAIRMAN_ERROR_RESPONSE
         }
 
     return {
         "model": CHAIRMAN_MODEL,
-        "response": response.get('content', '')
+        "response": mark_unverified(response.get('content', ''), verified_urls or set())
     }
 
 
@@ -293,7 +343,11 @@ Title:"""
     return title
 
 
-async def run_full_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
+async def run_full_council(
+    user_query: str,
+    prior_messages: Optional[List[Dict[str, Any]]] = None,
+    files: Optional[List[PdfFile]] = None,
+) -> Tuple[List, List, Dict, Dict]:
     """
     Run the complete 3-stage council process.
 
@@ -303,8 +357,12 @@ async def run_full_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
     Returns:
         Tuple of (stage1_results, stage2_results, stage3_result, metadata)
     """
+    prior_messages = prior_messages or []
+    files = files or []
+    history = build_history(prior_messages)
+
     # Stage 1: Collect individual responses
-    stage1_results = await stage1_collect_responses(user_query)
+    stage1_results = await stage1_collect_responses(user_query, history, files)
 
     # If no models responded successfully, return error
     if not stage1_results:
@@ -314,7 +372,9 @@ async def run_full_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
         }, {}
 
     # Stage 2: Collect rankings
-    stage2_results, label_to_model = await stage2_collect_rankings(user_query, stage1_results)
+    stage2_results, label_to_model = await stage2_collect_rankings(
+        user_query, stage1_results, history, files
+    )
 
     # Calculate aggregate rankings
     aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
@@ -323,7 +383,10 @@ async def run_full_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
     stage3_result = await stage3_synthesize_final(
         user_query,
         stage1_results,
-        stage2_results
+        stage2_results,
+        history,
+        files,
+        collect_verified_urls(prior_messages, stage1_results)
     )
 
     # Prepare metadata
