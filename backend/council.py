@@ -6,6 +6,7 @@ from .config import COUNCIL_MODELS, CHAIRMAN_MODEL, TITLE_MODEL
 from .citations import format_sources, collect_verified_urls, mark_unverified
 
 CHAIRMAN_ERROR_RESPONSE = "Error: Unable to generate final synthesis."
+ALL_FAILED_RESPONSE = "All models failed to respond. Please try again."
 
 STAGE1_INSTRUCTIONS = """---
 Instructions: Use web search to verify any figures, statistics or facts that may have changed recently, and prefer the most recent data. Next to each figure you state, put its source URL as a markdown link. If you could not verify a figure, mark it "출처 미확인". If documents are attached, base your review on their content."""
@@ -24,7 +25,7 @@ def build_history(prior_messages: List[Dict[str, Any]]) -> List[Dict[str, str]]:
         if user.get("role") != "user" or assistant.get("role") != "assistant":
             continue
         response = (assistant.get("stage3") or {}).get("response")
-        if not response or response == CHAIRMAN_ERROR_RESPONSE:
+        if not response or response in (CHAIRMAN_ERROR_RESPONSE, ALL_FAILED_RESPONSE):
             continue
         history.append({"role": "user", "content": user["content"]})
         history.append({"role": "assistant", "content": response})
@@ -64,6 +65,7 @@ async def stage1_collect_responses(
             sources = response.get('sources') or []
             stage1_results.append({
                 "model": model,
+                "body": response.get('content', ''),
                 "response": response.get('content', '') + format_sources(sources),
                 "sources": sources
             })
@@ -98,7 +100,7 @@ async def stage2_collect_rankings(
 
     # Build the ranking prompt
     responses_text = "\n\n".join([
-        f"Response {label}:\n{result['response']}"
+        f"Response {label}:\n{result.get('body', result['response'])}"
         for label, result in zip(labels, stage1_results)
     ])
 
@@ -176,7 +178,7 @@ async def stage3_synthesize_final(
     """
     # Build comprehensive context for chairman
     stage1_text = "\n\n".join([
-        f"Model: {result['model']}\nResponse: {result['response']}"
+        f"Model: {result['model']}\nResponse: {result.get('body', result['response'])}"
         for result in stage1_results
     ])
 
@@ -368,7 +370,7 @@ async def run_full_council(
     if not stage1_results:
         return [], [], {
             "model": "error",
-            "response": "All models failed to respond. Please try again."
+            "response": ALL_FAILED_RESPONSE
         }, {}
 
     # Stage 2: Collect rankings

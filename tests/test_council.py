@@ -76,3 +76,47 @@ async def test_stage3_table_only_with_files_and_marks_unverified(fake_council):
     assert "기획서 위치" not in fake_council.single_calls[-1]["messages"][-1]["content"]
     assert fake_council.single_calls[-1]["web_search"] is False
     assert "never invent new URLs" in fake_council.single_calls[-1]["messages"][-1]["content"]
+
+
+async def test_stage2_prompt_hides_sources_block(fake_council):
+    s1 = [{"model": "m", "body": "plain body", "response": "plain body\n\n출처:\n- [A](https://a.com)", "sources": []}]
+    await stage2_collect_rankings("q", s1)
+    prompt = fake_council.parallel_calls[0]["messages"][-1]["content"]
+    assert "plain body" in prompt and "출처:" not in prompt
+
+
+def test_build_history_skips_all_failed_turn():
+    prior = [{"role": "user", "content": "q"}, {"role": "assistant", "stage3": {"model": "error", "response": council.ALL_FAILED_RESPONSE}}]
+    assert build_history(prior) == []
+
+
+def test_sse_all_stage1_failed_skips_later_stages(tmp_path, monkeypatch):
+    import json
+    from fastapi.testclient import TestClient
+    import backend.main as main
+    from backend import storage
+    monkeypatch.setattr(storage, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(storage, "UPLOADS_DIR", str(tmp_path / "up"))
+
+    async def empty_stage1(*a, **k):
+        return []
+
+    async def boom(*a, **k):
+        raise AssertionError("must not be called")
+
+    async def title(q):
+        return "T"
+
+    monkeypatch.setattr(main, "stage1_collect_responses", empty_stage1)
+    monkeypatch.setattr(main, "stage2_collect_rankings", boom)
+    monkeypatch.setattr(main, "stage3_synthesize_final", boom)
+    monkeypatch.setattr(main, "generate_conversation_title", title)
+    client = TestClient(main.app)
+    cid = client.post("/api/conversations", json={}).json()["id"]
+    r = client.post(f"/api/conversations/{cid}/message/stream", json={"content": "hi"})
+    events = [json.loads(l[6:]) for l in r.text.splitlines() if l.startswith("data: ")]
+    types = [e["type"] for e in events]
+    assert types == ["stage1_start", "stage1_complete", "stage3_complete", "title_complete", "complete"]
+    assert events[2]["data"] == {"model": "error", "response": council.ALL_FAILED_RESPONSE}
+    last = storage.get_conversation(cid)["messages"][-1]
+    assert last["stage1"] == [] and last["stage3"]["model"] == "error"

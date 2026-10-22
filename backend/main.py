@@ -11,7 +11,7 @@ import asyncio
 
 from . import storage
 from .config import MAX_CONVERSATION_FILES_BYTES
-from .council import run_full_council, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings, build_history
+from .council import run_full_council, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings, build_history, ALL_FAILED_RESPONSE
 from .citations import collect_verified_urls
 
 app = FastAPI(title="LLM Council API")
@@ -177,6 +177,18 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
             stage1_results = await stage1_collect_responses(request.content, history, files)
             yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
+
+            if not stage1_results:
+                # Same outcome as run_full_council: skip stages 2 and 3
+                stage3_result = {"model": "error", "response": ALL_FAILED_RESPONSE}
+                yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
+                if title_task:
+                    title = await title_task
+                    storage.update_conversation_title(conversation_id, title)
+                    yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
+                storage.add_assistant_message(conversation_id, [], [], stage3_result)
+                yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+                return
 
             # Stage 2: Collect rankings
             yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
