@@ -10,6 +10,7 @@ export default function ChatInterface({
   onSendMessage,
   onUploadFile,
   isLoading,
+  sendError,
 }) {
   const [input, setInput] = useState('');
   const [isUploading, setIsUploading] = useState(false);
@@ -149,6 +150,8 @@ export default function ChatInterface({
           {uploadError && <div className="upload-error">{uploadError}</div>}
         </div>
       )}
+
+      {sendError && <div className="send-error">{sendError}</div>}
 
       <form className="input-form" onSubmit={handleSubmit}>
         <input

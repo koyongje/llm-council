@@ -9,6 +9,7 @@ function App() {
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [currentConversation, setCurrentConversation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [sendError, setSendError] = useState('');
 
   // Load conversations on mount
   useEffect(() => {
@@ -72,6 +73,7 @@ function App() {
     if (!currentConversationId) return;
 
     setIsLoading(true);
+    setSendError('');
     try {
       // Optimistically add user message to UI
       const userMessage = { role: 'user', content };
@@ -174,6 +176,12 @@ function App() {
 
           case 'error':
             console.error('Stream error:', event.message);
+            // Drop the dead optimistic user + assistant messages
+            setCurrentConversation((prev) => ({
+              ...prev,
+              messages: prev.messages.slice(0, -2),
+            }));
+            setSendError(event.message || 'The council request failed.');
             setIsLoading(false);
             break;
 
@@ -188,6 +196,7 @@ function App() {
         ...prev,
         messages: prev.messages.slice(0, -2),
       }));
+      setSendError(error.message || 'Failed to send message.');
       setIsLoading(false);
     }
   };
@@ -205,6 +214,7 @@ function App() {
         onSendMessage={handleSendMessage}
         onUploadFile={handleUploadFile}
         isLoading={isLoading}
+        sendError={sendError}
       />
     </div>
   );
