@@ -11,7 +11,7 @@ async def test_anthropic_sends_pdf_and_web_search_and_extracts_sources(fake_post
     r = await query_model("anthropic/claude-opus-5-5", [{"role": "user", "content": "q"}], files=[PDF], web_search=True)
     body = fake_post.calls[0][1]
     assert body["messages"][-1]["content"][0]["type"] == "document"
-    assert body["tools"] == [{"type": "web_search_20260209", "name": "web_search"}]
+    assert body["tools"] == [{"type": "web_search_20260209", "name": "web_search", "max_uses": 5}]
     assert r == {"content": "answer", "reasoning_details": None, "sources": [{"url": "https://a.com", "title": "A"}]}
 
 

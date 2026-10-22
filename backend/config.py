@@ -27,6 +27,13 @@ TITLE_MODEL = "google/gemini-3.8-flash"
 # Anthropic requires an explicit output token limit
 ANTHROPIC_MAX_TOKENS = 16000
 
+# Cap on Anthropic web searches per request; unbounded searching made long
+# Stage 1 answers exceed the request timeout
+WEB_SEARCH_MAX_USES = 5
+
+# Stage 1 (web search + long answers) needs more time than other calls
+STAGE1_TIMEOUT = 600.0
+
 # Data directory for conversation storage
 DATA_DIR = "data/conversations"
 

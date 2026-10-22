@@ -26,8 +26,8 @@ class FakeCouncil:
 def fake_council(monkeypatch):
     fake = FakeCouncil()
 
-    async def parallel(models, messages, files=None, web_search=False):
-        fake.parallel_calls.append({"messages": messages, "files": files, "web_search": web_search})
+    async def parallel(models, messages, files=None, web_search=False, timeout=300.0):
+        fake.parallel_calls.append({"messages": messages, "files": files, "web_search": web_search, "timeout": timeout})
         return fake.parallel_reply
 
     async def single(model, messages, timeout=300.0, files=None, web_search=False):
@@ -51,6 +51,7 @@ async def test_stage1_uses_web_search_files_history_and_appends_sources(fake_cou
     out = await stage1_collect_responses("q", history=[{"role": "user", "content": "h"}, {"role": "assistant", "content": "ha"}], files=[PDF])
     call = fake_council.parallel_calls[0]
     assert call["web_search"] is True and call["files"] == [PDF]
+    assert call["timeout"] == 600.0
     assert call["messages"][:2] == [{"role": "user", "content": "h"}, {"role": "assistant", "content": "ha"}]
     assert "출처 미확인" in call["messages"][-1]["content"]
     assert out[0]["body"] == "ans"

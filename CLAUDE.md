@@ -79,6 +79,7 @@ Prior turns are sent to the models as history: earlier user questions and chairm
 - **Metadata is ephemeral**: `label_to_model` and `aggregate_rankings` are returned to the client but never persisted. Reloaded conversations have no de-anonymization metadata.
 - **De-anonymization is client-side**: models only ever see "Response X" labels; Stage2.jsx substitutes bold model names for display.
 - **Stage 2 prompt format is load-bearing**: models must end with a `FINAL RANKING:` header and a numbered list (`1. Response C`). `parse_ranking_from_text()` parses that, with a fallback regex that grabs any `Response X` in order. Changing the prompt can break parsing.
+- **Timeouts and search caps**: Stage 1 calls use `STAGE1_TIMEOUT` (600 s), other calls 300 s. Anthropic web search is capped at `WEB_SEARCH_MAX_USES` (5) per request; without the cap Claude searched so much on long planning requests that Stage 1 hit `ReadTimeout` and Claude was dropped.
 - **Port 8001, not 8000** (user has another app on 8000). If changed, update both `backend/main.py` and `frontend/src/api.js`. CORS in `main.py` allows only `localhost:5173` and `localhost:3000`.
 - **Relative imports** in `backend/` (`from .config import …`): always run as `python -m backend.main` from the project root.
 - **Markdown rendering**: wrap every `ReactMarkdown` in `<div className="markdown-content">` (styles in `index.css`).

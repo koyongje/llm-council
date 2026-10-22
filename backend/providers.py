@@ -10,6 +10,7 @@ from .config import (
     OPENAI_API_KEY,
     GEMINI_API_KEY,
     ANTHROPIC_MAX_TOKENS,
+    WEB_SEARCH_MAX_USES,
 )
 
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
@@ -72,7 +73,7 @@ async def _query_anthropic(
         "messages": msgs,
     }
     if web_search:
-        payload["tools"] = [{"type": "web_search_20260209", "name": "web_search"}]
+        payload["tools"] = [{"type": "web_search_20260209", "name": "web_search", "max_uses": WEB_SEARCH_MAX_USES}]
 
     text = ""
     sources: List[Source] = []
@@ -224,6 +225,7 @@ async def query_models_parallel(
     messages: List[Dict[str, str]],
     files: Optional[List[PdfFile]] = None,
     web_search: bool = False,
+    timeout: float = 300.0,
 ) -> Dict[str, Optional[Dict[str, Any]]]:
     """
     Query multiple models in parallel.
@@ -231,12 +233,16 @@ async def query_models_parallel(
     Args:
         models: List of "provider/model-id" identifiers
         messages: List of message dicts to send to each model
+        timeout: Per-request timeout in seconds
 
     Returns:
         Dict mapping model identifier to response dict (or None if failed)
     """
     # Create tasks for all models
-    tasks = [query_model(model, messages, files=files, web_search=web_search) for model in models]
+    tasks = [
+        query_model(model, messages, timeout=timeout, files=files, web_search=web_search)
+        for model in models
+    ]
 
     # Wait for all to complete
     responses = await asyncio.gather(*tasks)

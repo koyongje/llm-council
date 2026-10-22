@@ -2,7 +2,7 @@
 
 from typing import List, Dict, Any, Optional, Set, Tuple
 from .providers import query_models_parallel, query_model, PdfFile
-from .config import COUNCIL_MODELS, CHAIRMAN_MODEL, TITLE_MODEL
+from .config import COUNCIL_MODELS, CHAIRMAN_MODEL, TITLE_MODEL, STAGE1_TIMEOUT
 from .citations import format_sources, collect_verified_urls, mark_unverified
 
 CHAIRMAN_ERROR_RESPONSE = "Error: Unable to generate final synthesis."
@@ -55,7 +55,7 @@ async def stage1_collect_responses(
 
     # Query all models in parallel
     responses = await query_models_parallel(
-        COUNCIL_MODELS, messages, files=files or [], web_search=True
+        COUNCIL_MODELS, messages, files=files or [], web_search=True, timeout=STAGE1_TIMEOUT
     )
 
     # Format results
