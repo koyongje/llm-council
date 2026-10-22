@@ -3,24 +3,29 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+# .env takes precedence over OS environment variables
+load_dotenv(override=True)
 
-# OpenRouter API key
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+# Provider API keys
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# Council members - list of OpenRouter model identifiers
+# Council members - "provider/model-id" (provider: anthropic | openai | google)
 COUNCIL_MODELS = [
     "openai/gpt-5.1",
-    "google/gemini-3-pro-preview",
-    "anthropic/claude-sonnet-4.5",
-    "x-ai/grok-4",
+    "google/gemini-3.1-pro-preview",
+    "anthropic/claude-opus-5-5",
 ]
 
 # Chairman model - synthesizes final response
-CHAIRMAN_MODEL = "google/gemini-3-pro-preview"
+CHAIRMAN_MODEL = "anthropic/claude-opus-5-5"
 
-# OpenRouter API endpoint
-OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+# Fast, cheap model for conversation titles
+TITLE_MODEL = "google/gemini-3.8-flash"
+
+# Anthropic requires an explicit output token limit
+ANTHROPIC_MAX_TOKENS = 16000
 
 # Data directory for conversation storage
 DATA_DIR = "data/conversations"
