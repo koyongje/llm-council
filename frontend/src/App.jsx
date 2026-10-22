@@ -58,10 +58,13 @@ function App() {
   };
 
   const handleUploadFile = async (file) => {
-    if (!currentConversationId) return;
-    const uploaded = await api.uploadFile(currentConversationId, file);
+    const id = currentConversationId;
+    if (!id) return;
+    const uploaded = await api.uploadFile(id, file);
     setCurrentConversation((prev) =>
-      prev ? { ...prev, files: [...(prev.files || []), uploaded] } : prev
+      prev?.id === id
+        ? { ...prev, files: [...(prev.files || []), uploaded] }
+        : prev
     );
   };
 
