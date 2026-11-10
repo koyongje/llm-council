@@ -45,6 +45,18 @@ try {
     Write-Host ""
     Write-Host "Press Ctrl+C to stop both servers."
 
+    # Open the browser once the frontend responds (up to 30 s)
+    for ($i = 0; $i -lt 30; $i++) {
+        try {
+            Invoke-WebRequest "http://localhost:5173" -UseBasicParsing -TimeoutSec 1 | Out-Null
+            Start-Process "http://localhost:5173"
+            break
+        }
+        catch {
+            Start-Sleep -Seconds 1
+        }
+    }
+
     # Keep script running
     while ($true) {
         Start-Sleep -Seconds 1
