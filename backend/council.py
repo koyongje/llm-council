@@ -242,26 +242,24 @@ def parse_ranking_from_text(ranking_text: str) -> List[str]:
     """
     import re
 
+    def first_occurrences(labels: List[str]) -> List[str]:
+        # A label mentioned twice must not be counted at two rank positions
+        return list(dict.fromkeys(labels))
+
     # Look for "FINAL RANKING:" section
     if "FINAL RANKING:" in ranking_text:
         # Extract everything after "FINAL RANKING:"
-        parts = ranking_text.split("FINAL RANKING:")
-        if len(parts) >= 2:
-            ranking_section = parts[1]
-            # Try to extract numbered list format (e.g., "1. Response A")
-            # This pattern looks for: number, period, optional space, "Response X"
-            numbered_matches = re.findall(r'\d+\.\s*Response [A-Z]', ranking_section)
-            if numbered_matches:
-                # Extract just the "Response X" part
-                return [re.search(r'Response [A-Z]', m).group() for m in numbered_matches]
+        ranking_section = ranking_text.split("FINAL RANKING:", 1)[1]
+        # Try to extract numbered list format (e.g., "1. Response A")
+        numbered_matches = re.findall(r'\d+\.\s*(Response [A-Z])', ranking_section)
+        if numbered_matches:
+            return first_occurrences(numbered_matches)
 
-            # Fallback: Extract all "Response X" patterns in order
-            matches = re.findall(r'Response [A-Z]', ranking_section)
-            return matches
+        # Fallback: Extract all "Response X" patterns in order
+        return first_occurrences(re.findall(r'Response [A-Z]', ranking_section))
 
     # Fallback: try to find any "Response X" patterns in order
-    matches = re.findall(r'Response [A-Z]', ranking_text)
-    return matches
+    return first_occurrences(re.findall(r'Response [A-Z]', ranking_text))
 
 
 def calculate_aggregate_rankings(
@@ -284,10 +282,9 @@ def calculate_aggregate_rankings(
     model_positions = defaultdict(list)
 
     for ranking in stage2_results:
-        ranking_text = ranking['ranking']
-
-        # Parse the ranking from the structured format
-        parsed_ranking = parse_ranking_from_text(ranking_text)
+        parsed_ranking = ranking.get('parsed_ranking')
+        if parsed_ranking is None:
+            parsed_ranking = parse_ranking_from_text(ranking['ranking'])
 
         for position, label in enumerate(parsed_ranking, start=1):
             if label in label_to_model:

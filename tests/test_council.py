@@ -173,3 +173,18 @@ def test_sse_payload_keeps_korean_unescaped():
     from backend.main import _sse
     out = _sse({"type": "x", "data": "한글"})
     assert "한글" in out and out.endswith("\n\n")
+
+
+def test_parse_ranking_fallback_dedupes_repeated_labels():
+    text = "Response A is good. Response B is weaker than Response A."
+    assert council.parse_ranking_from_text(text) == ["Response A", "Response B"]
+
+
+def test_aggregate_counts_each_label_once_per_evaluator():
+    stage2 = [{"model": "m", "ranking": "Response A beats Response B; Response A wins.",
+               "parsed_ranking": ["Response A", "Response B"]}]
+    agg = council.calculate_aggregate_rankings(stage2, {"Response A": "x/a", "Response B": "x/b"})
+    assert agg == [
+        {"model": "x/a", "average_rank": 1.0, "rankings_count": 1},
+        {"model": "x/b", "average_rank": 2.0, "rankings_count": 1},
+    ]

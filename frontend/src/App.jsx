@@ -11,18 +11,6 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [sendError, setSendError] = useState('');
 
-  // Load conversations on mount
-  useEffect(() => {
-    loadConversations();
-  }, []);
-
-  // Load conversation details when selected
-  useEffect(() => {
-    if (currentConversationId) {
-      loadConversation(currentConversationId);
-    }
-  }, [currentConversationId]);
-
   const loadConversations = async () => {
     try {
       const convs = await api.listConversations();
@@ -40,6 +28,18 @@ function App() {
       console.error('Failed to load conversation:', error);
     }
   };
+
+  // Load conversations on mount
+  useEffect(() => {
+    loadConversations();
+  }, []);
+
+  // Load conversation details when selected
+  useEffect(() => {
+    if (currentConversationId) {
+      loadConversation(currentConversationId);
+    }
+  }, [currentConversationId]);
 
   const handleNewConversation = async () => {
     try {
@@ -102,8 +102,13 @@ function App() {
         messages: [...prev.messages, assistantMessage],
       }));
 
+      // Set once the stream reports `complete` or `error`; if it ends without
+      // either (backend crashed, connection dropped) the UI must not stay stuck.
+      let finished = false;
+
       // Send message with streaming
       await api.sendMessageStream(currentConversationId, content, (eventType, event) => {
+        if (eventType === 'complete' || eventType === 'error') finished = true;
         switch (eventType) {
           case 'stage1_start':
             setCurrentConversation((prev) => {
@@ -189,6 +194,10 @@ function App() {
             console.log('Unknown event type:', eventType);
         }
       });
+
+      if (!finished) {
+        throw new Error('The connection to the server ended before the council finished.');
+      }
     } catch (error) {
       console.error('Failed to send message:', error);
       // Remove optimistic messages on error
