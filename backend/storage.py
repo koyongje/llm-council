@@ -3,8 +3,9 @@
 import json
 import logging
 import os
+import tempfile
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from .config import DATA_DIR, UPLOADS_DIR
@@ -33,6 +34,22 @@ def get_conversation_path(conversation_id: str) -> str:
     return os.path.join(DATA_DIR, f"{conversation_id}.json")
 
 
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _write_json(path: str, data: Dict[str, Any]) -> None:
+    """Write via a temp file + rename so a crash never leaves a half-written file."""
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp, path)
+    except BaseException:
+        os.unlink(tmp)
+        raise
+
+
 def create_conversation(conversation_id: str) -> Dict[str, Any]:
     """
     Create a new conversation.
@@ -47,17 +64,13 @@ def create_conversation(conversation_id: str) -> Dict[str, Any]:
 
     conversation = {
         "id": conversation_id,
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": _now(),
         "title": "New Conversation",
         "messages": [],
         "files": []
     }
 
-    # Save to file
-    path = get_conversation_path(conversation_id)
-    with open(path, 'w') as f:
-        json.dump(conversation, f, indent=2)
-
+    _write_json(get_conversation_path(conversation_id), conversation)
     return conversation
 
 
@@ -93,9 +106,7 @@ def save_conversation(conversation: Dict[str, Any]):
     """
     ensure_data_dir()
 
-    path = get_conversation_path(conversation['id'])
-    with open(path, 'w') as f:
-        json.dump(conversation, f, indent=2)
+    _write_json(get_conversation_path(conversation['id']), conversation)
 
 
 def list_conversations() -> List[Dict[str, Any]]:
@@ -111,8 +122,9 @@ def list_conversations() -> List[Dict[str, Any]]:
     for filename in os.listdir(DATA_DIR):
         if filename.endswith('.json'):
             path = os.path.join(DATA_DIR, filename)
-            with open(path, 'r') as f:
-                data = json.load(f)
+            try:
+                with open(path, 'r') as f:
+                    data = json.load(f)
                 # Return metadata only
                 conversations.append({
                     "id": data["id"],
@@ -120,6 +132,9 @@ def list_conversations() -> List[Dict[str, Any]]:
                     "title": data.get("title", "New Conversation"),
                     "message_count": len(data["messages"])
                 })
+            except (OSError, ValueError, KeyError) as e:
+                # One unreadable file must not hide every other conversation
+                logger.warning("Skipping unreadable conversation file %s: %s", path, e)
 
     # Sort by creation time, newest first
     conversations.sort(key=lambda x: x["created_at"], reverse=True)
@@ -127,45 +142,24 @@ def list_conversations() -> List[Dict[str, Any]]:
     return conversations
 
 
-def add_user_message(conversation_id: str, content: str):
-    """
-    Add a user message to a conversation.
-
-    Args:
-        conversation_id: Conversation identifier
-        content: User message content
-    """
-    conversation = get_conversation(conversation_id)
-    if conversation is None:
-        raise ValueError(f"Conversation {conversation_id} not found")
-
-    conversation["messages"].append({
-        "role": "user",
-        "content": content
-    })
-
-    save_conversation(conversation)
-
-
-def add_assistant_message(
+def add_turn(
     conversation_id: str,
+    user_content: str,
     stage1: List[Dict[str, Any]],
     stage2: List[Dict[str, Any]],
     stage3: Dict[str, Any]
 ):
     """
-    Add an assistant message with all 3 stages to a conversation.
+    Append a user message and its council answer in a single save.
 
-    Args:
-        conversation_id: Conversation identifier
-        stage1: List of individual model responses
-        stage2: List of model rankings
-        stage3: Final synthesized response
+    Saving both together means a failed council run leaves no orphan user
+    message behind (the client discards its optimistic copy on error).
     """
     conversation = get_conversation(conversation_id)
     if conversation is None:
         raise ValueError(f"Conversation {conversation_id} not found")
 
+    conversation["messages"].append({"role": "user", "content": user_content})
     conversation["messages"].append({
         "role": "assistant",
         "stage1": stage1,
@@ -216,7 +210,7 @@ def add_file(conversation_id: str, filename: str, data: bytes) -> Dict[str, Any]
         "id": file_id,
         "filename": filename,
         "size": len(data),
-        "uploaded_at": datetime.utcnow().isoformat()
+        "uploaded_at": _now()
     }
     conversation["files"].append(entry)
     save_conversation(conversation)

@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import logging
 import httpx
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
@@ -18,6 +19,8 @@ OPENAI_API_URL = "https://api.openai.com/v1/responses"
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 MAX_PAUSE_CONTINUATIONS = 3
+
+logger = logging.getLogger(__name__)
 
 # Mirrors backend.citations.Source
 Source = Dict[str, str]
@@ -211,12 +214,12 @@ async def query_model(
             raise ValueError(f"Unknown provider '{provider}' (expected one of {list(PROVIDERS)})")
         result = await PROVIDERS[provider](model_id, messages, timeout, files, web_search)
         if not (result.get("content") or "").strip():
-            print(f"Error querying model {model}: empty response content")
+            logger.warning("Error querying model %s: empty response content", model)
             return None
         return result
 
     except Exception as e:
-        print(f"Error querying model {model}: {type(e).__name__}: {e}")
+        logger.warning("Error querying model %s: %s: %s", model, type(e).__name__, e)
         return None
 
 

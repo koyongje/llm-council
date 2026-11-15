@@ -188,3 +188,32 @@ def test_aggregate_counts_each_label_once_per_evaluator():
         {"model": "x/a", "average_rank": 1.0, "rankings_count": 1},
         {"model": "x/b", "average_rank": 2.0, "rankings_count": 1},
     ]
+
+
+def test_sse_failure_mid_council_saves_nothing(tmp_path, monkeypatch):
+    import json
+    from fastapi.testclient import TestClient
+    import backend.main as main
+    from backend import storage
+    monkeypatch.setattr(storage, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(storage, "UPLOADS_DIR", str(tmp_path / "up"))
+
+    async def ok_stage1(*a, **k):
+        return [{"model": "x/a", "body": "b", "response": "b", "sources": []}]
+
+    async def boom(*a, **k):
+        raise RuntimeError("stage 2 exploded")
+
+    async def title(q):
+        return "T"
+
+    monkeypatch.setattr(main, "stage1_collect_responses", ok_stage1)
+    monkeypatch.setattr(main, "stage2_collect_rankings", boom)
+    monkeypatch.setattr(main, "generate_conversation_title", title)
+    client = TestClient(main.app)
+    cid = client.post("/api/conversations", json={}).json()["id"]
+    r = client.post(f"/api/conversations/{cid}/message/stream", json={"content": "hi"})
+    events = [json.loads(l[6:]) for l in r.text.splitlines() if l.startswith("data: ")]
+    assert events[-1] == {"type": "error", "message": "stage 2 exploded"}
+    # The client drops the optimistic messages on error; the server must agree
+    assert storage.get_conversation(cid)["messages"] == []

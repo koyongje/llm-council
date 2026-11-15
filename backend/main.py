@@ -16,6 +16,8 @@ from .citations import collect_verified_urls
 
 app = FastAPI(title="LLM Council API")
 
+UPLOAD_CHUNK_BYTES = 1024 * 1024
+
 # Enable CORS for local development
 app.add_middleware(
     CORSMiddleware,
@@ -94,13 +96,20 @@ async def upload_file(conversation_id: str, file: UploadFile = File(...)):
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
-    data = await file.read()
+    # Read in chunks and stop as soon as the limit is passed, so an oversized
+    # upload is never held in memory in full
+    remaining = MAX_CONVERSATION_FILES_BYTES - sum(f["size"] for f in conversation["files"])
+    chunks = []
+    received = 0
+    while chunk := await file.read(UPLOAD_CHUNK_BYTES):
+        received += len(chunk)
+        if received > remaining:
+            raise HTTPException(status_code=400, detail="Attachments for this conversation would exceed 14 MB")
+        chunks.append(chunk)
+    data = b"".join(chunks)
+
     if not data.startswith(b"%PDF-"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
-
-    existing = sum(f["size"] for f in conversation["files"])
-    if existing + len(data) > MAX_CONVERSATION_FILES_BYTES:
-        raise HTTPException(status_code=400, detail="Attachments for this conversation would exceed 14 MB")
 
     return storage.add_file(conversation_id, file.filename or "document.pdf", data)
 
@@ -121,9 +130,6 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
     is_first_message = len(prior) == 0
     files = storage.get_files(conversation_id)
 
-    # Add user message
-    storage.add_user_message(conversation_id, request.content)
-
     # If this is the first message, generate a title
     if is_first_message:
         title = await generate_conversation_title(request.content)
@@ -134,9 +140,10 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
         request.content, prior, files
     )
 
-    # Add assistant message with all stages
-    storage.add_assistant_message(
+    # Save the question and its answer together (nothing is saved on failure)
+    storage.add_turn(
         conversation_id,
+        request.content,
         stage1_results,
         stage2_results,
         stage3_result
@@ -170,8 +177,8 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
 
     async def event_generator():
         try:
-            # Add user message
-            storage.add_user_message(conversation_id, request.content)
+            # The user message is saved together with the answer at the end, so
+            # a failed run leaves nothing behind (the client drops its copy too)
 
             # Start title generation in parallel (don't await yet)
             title_task = None
@@ -191,7 +198,7 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                     title = await title_task
                     storage.update_conversation_title(conversation_id, title)
                     yield _sse({'type': 'title_complete', 'data': {'title': title}})
-                storage.add_assistant_message(conversation_id, [], [], stage3_result)
+                storage.add_turn(conversation_id, request.content, [], [], stage3_result)
                 yield _sse({'type': 'complete'})
                 return
 
@@ -215,9 +222,10 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
                 storage.update_conversation_title(conversation_id, title)
                 yield _sse({'type': 'title_complete', 'data': {'title': title}})
 
-            # Save complete assistant message
-            storage.add_assistant_message(
+            # Save the question and its answer together
+            storage.add_turn(
                 conversation_id,
+                request.content,
                 stage1_results,
                 stage2_results,
                 stage3_result

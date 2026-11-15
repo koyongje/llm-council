@@ -85,3 +85,19 @@ def test_get_files_skips_missing_pdf(client, uploads_dir):
         client.post(f"/api/conversations/{cid}/files", files={"file": (name, b"%PDF-1", "application/pdf")})
     next(uploads_dir.rglob("*.pdf")).unlink()
     assert len(storage.get_files(cid)) == 1
+
+
+def test_rejects_single_oversized_file_without_storing(client, uploads_dir, monkeypatch):
+    monkeypatch.setattr("backend.main.MAX_CONVERSATION_FILES_BYTES", 20)
+    cid = client.post("/api/conversations", json={}).json()["id"]
+    r = client.post(f"/api/conversations/{cid}/files", files={"file": ("big.pdf", b"%PDF-" + b"x" * 100, "application/pdf")})
+    assert r.status_code == 400 and r.json()["detail"] == "Attachments for this conversation would exceed 14 MB"
+    assert not any(uploads_dir.rglob("*.pdf"))
+    assert client.get(f"/api/conversations/{cid}").json()["files"] == []
+
+
+def test_saved_conversation_is_valid_json_and_leaves_no_temp_files(client, data_dir):
+    cid = client.post("/api/conversations", json={}).json()["id"]
+    storage.update_conversation_title(cid, "제목")
+    assert [p.name for p in data_dir.iterdir()] == [f"{cid}.json"]
+    assert storage.get_conversation(cid)["title"] == "제목"
