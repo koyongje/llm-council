@@ -76,7 +76,7 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
         <div className="aggregate-rankings">
           <h4>Aggregate Rankings (Street Cred)</h4>
           <p className="stage-description">
-            Combined results across all peer evaluations (lower score is better):
+            Combined results across all peer evaluations, excluding each model's vote for itself (lower score is better):
           </p>
           <div className="aggregate-list">
             {aggregateRankings.map((agg, index) => (

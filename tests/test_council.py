@@ -217,3 +217,47 @@ def test_sse_failure_mid_council_saves_nothing(tmp_path, monkeypatch):
     assert events[-1] == {"type": "error", "message": "stage 2 exploded"}
     # The client drops the optimistic messages on error; the server must agree
     assert storage.get_conversation(cid)["messages"] == []
+
+
+def test_aggregate_excludes_self_votes_and_reranks_the_rest():
+    labels = {"Response A": "x/a", "Response B": "x/b", "Response C": "x/c"}
+    stage2 = [
+        # Each evaluator puts itself first; that vote is dropped and the
+        # remaining labels are renumbered from 1
+        {"model": "x/a", "ranking": "", "parsed_ranking": ["Response A", "Response B", "Response C"]},
+        {"model": "x/b", "ranking": "", "parsed_ranking": ["Response B", "Response A", "Response C"]},
+        {"model": "x/c", "ranking": "", "parsed_ranking": ["Response C", "Response B", "Response A"]},
+    ]
+    agg = council.calculate_aggregate_rankings(stage2, labels)
+    # a: b→1, c→2 = 1.5 ; b: a→1, c→1 = 1.0 ; c: a→2, b→2 = 2.0
+    assert agg == [
+        {"model": "x/b", "average_rank": 1.0, "rankings_count": 2},
+        {"model": "x/a", "average_rank": 1.5, "rankings_count": 2},
+        {"model": "x/c", "average_rank": 2.0, "rankings_count": 2},
+    ]
+
+
+def test_sse_sends_keepalive_comments_while_a_stage_runs(tmp_path, monkeypatch):
+    import asyncio
+    from fastapi.testclient import TestClient
+    import backend.main as main
+    from backend import storage
+    monkeypatch.setattr(storage, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(storage, "UPLOADS_DIR", str(tmp_path / "up"))
+    monkeypatch.setattr(main, "HEARTBEAT_SECONDS", 0.01)
+
+    async def slow_empty_stage1(*a, **k):
+        await asyncio.sleep(0.1)
+        return []
+
+    async def title(q):
+        return "T"
+
+    monkeypatch.setattr(main, "stage1_collect_responses", slow_empty_stage1)
+    monkeypatch.setattr(main, "generate_conversation_title", title)
+    client = TestClient(main.app)
+    cid = client.post("/api/conversations", json={}).json()["id"]
+    r = client.post(f"/api/conversations/{cid}/message/stream", json={"content": "hi"})
+    # SSE comment lines keep the connection visibly alive; data events are unchanged
+    assert ": keepalive" in r.text
+    assert r.text.index(": keepalive") < r.text.index('"stage1_complete"')

@@ -18,6 +18,10 @@ app = FastAPI(title="LLM Council API")
 
 UPLOAD_CHUNK_BYTES = 1024 * 1024
 
+# A council run can take many minutes with no events; an SSE comment line this
+# often shows the connection is alive and lets the server notice a closed client
+HEARTBEAT_SECONDS = 15.0
+
 # Enable CORS for local development
 app.add_middleware(
     CORSMiddleware,
@@ -31,6 +35,27 @@ app.add_middleware(
 def _sse(payload: Dict[str, Any]) -> str:
     """Format one Server-Sent Event; keep Korean text unescaped to shrink payloads."""
     return "data: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
+
+
+async def _with_heartbeat(awaitable, result: List[Any]):
+    """
+    Run `awaitable`, yielding an SSE keepalive comment every HEARTBEAT_SECONDS
+    until it finishes, then append its return value to `result`.
+
+    If the client disconnects, the generator is closed and the stage is
+    cancelled instead of continuing to spend API calls nobody will read.
+    """
+    task = asyncio.ensure_future(awaitable)
+    try:
+        while True:
+            done, _ = await asyncio.wait({task}, timeout=HEARTBEAT_SECONDS)
+            if done:
+                break
+            yield ": keepalive\n\n"
+    finally:
+        if not task.done():
+            task.cancel()
+    result.append(task.result())
 
 
 class CreateConversationRequest(BaseModel):
@@ -187,7 +212,10 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
 
             # Stage 1: Collect responses
             yield _sse({'type': 'stage1_start'})
-            stage1_results = await stage1_collect_responses(request.content, history, files)
+            box: List[Any] = []
+            async for ping in _with_heartbeat(stage1_collect_responses(request.content, history, files), box):
+                yield ping
+            stage1_results = box.pop()
             yield _sse({'type': 'stage1_complete', 'data': stage1_results})
 
             if not stage1_results:
@@ -204,16 +232,20 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
 
             # Stage 2: Collect rankings
             yield _sse({'type': 'stage2_start'})
-            stage2_results, label_to_model = await stage2_collect_rankings(request.content, stage1_results, history, files)
+            async for ping in _with_heartbeat(stage2_collect_rankings(request.content, stage1_results, history, files), box):
+                yield ping
+            stage2_results, label_to_model = box.pop()
             aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
             yield _sse({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})
 
             # Stage 3: Synthesize final answer
             yield _sse({'type': 'stage3_start'})
-            stage3_result = await stage3_synthesize_final(
+            async for ping in _with_heartbeat(stage3_synthesize_final(
                 request.content, stage1_results, stage2_results, history, files,
                 collect_verified_urls(prior, stage1_results)
-            )
+            ), box):
+                yield ping
+            stage3_result = box.pop()
             yield _sse({'type': 'stage3_complete', 'data': stage3_result})
 
             # Wait for title generation if it was started

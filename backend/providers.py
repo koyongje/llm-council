@@ -68,6 +68,11 @@ async def _query_anthropic(
             {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": _b64(f)}}
             for f in files
         ]
+        if not web_search:
+            # Stages 2 and 3 send identical history + PDFs with no tools, so
+            # Stage 3 reads what Stage 2 wrote. Stage 1 is skipped: its tools
+            # differ, so its cache entry would never be read back.
+            blocks[-1]["cache_control"] = {"type": "ephemeral"}
         msgs[-1] = {"role": msgs[-1]["role"], "content": blocks + [{"type": "text", "text": msgs[-1]["content"]}]}
 
     payload: Dict[str, Any] = {

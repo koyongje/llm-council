@@ -286,10 +286,14 @@ def calculate_aggregate_rankings(
         if parsed_ranking is None:
             parsed_ranking = parse_ranking_from_text(ranking['ranking'])
 
-        for position, label in enumerate(parsed_ranking, start=1):
-            if label in label_to_model:
-                model_name = label_to_model[label]
-                model_positions[model_name].append(position)
+        # Drop the evaluator's vote for its own response (models can recognise
+        # their own style through the anonymisation), then rank the rest from 1
+        others = [
+            label_to_model[label] for label in parsed_ranking
+            if label in label_to_model and label_to_model[label] != ranking['model']
+        ]
+        for position, model_name in enumerate(others, start=1):
+            model_positions[model_name].append(position)
 
     # Calculate average position for each model
     aggregate = []

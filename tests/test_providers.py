@@ -78,3 +78,21 @@ async def test_gemini_recitation_without_text_returns_none(fake_post):
 async def test_whitespace_only_content_returns_none(fake_post):
     fake_post.reply = {"candidates": [{"content": {"parts": [{"text": "  \n"}]}}]}
     assert await query_model("google/gemini-3.1-pro-preview", [{"role": "user", "content": "q"}]) is None
+
+
+async def test_anthropic_caches_pdfs_when_no_web_search(fake_post):
+    # Stages 2 and 3 send the same history + PDFs with no tools, so the
+    # Stage 2 cache write is read back by Stage 3
+    fake_post.reply = {"stop_reason": "end_turn", "content": [{"type": "text", "text": "a"}]}
+    await query_model("anthropic/claude-opus-5-5", [{"role": "user", "content": "q"}], files=[PDF, PDF])
+    blocks = fake_post.calls[0][1]["messages"][-1]["content"]
+    assert [b.get("cache_control") for b in blocks] == [None, {"type": "ephemeral"}, None]
+
+
+async def test_anthropic_skips_cache_with_web_search(fake_post):
+    # Stage 1's tools differ from stages 2-3, so a cache write there is never read
+    fake_post.reply = {"stop_reason": "end_turn", "content": [{"type": "text", "text": "a"}]}
+    await query_model("anthropic/claude-opus-5-5", [{"role": "user", "content": "q"}], files=[PDF], web_search=True)
+    blocks = fake_post.calls[0][1]["messages"][-1]["content"]
+    assert all("cache_control" not in b for b in blocks)
+
