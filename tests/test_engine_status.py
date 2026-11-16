@@ -57,11 +57,10 @@ def test_long_message_is_truncated():
 
 
 def test_engines_endpoint_lists_configured_models_once_in_order(monkeypatch):
-    monkeypatch.setattr(main, "COUNCIL_MODELS", ["a/1", "b/2"])
-    monkeypatch.setattr(main, "CHAIRMAN_MODEL", "b/2")
-    monkeypatch.setattr(main, "TITLE_MODEL", "c/3")
-    engine_status.record_failure("a/1", "HTTP 429: insufficient_quota")
+    monkeypatch.setattr(main.settings, "get_council", lambda: (["openai/a", "google/b"], "google/b"))
+    monkeypatch.setattr(main, "TITLE_MODEL", "google/c")
+    engine_status.record_failure("openai/a", "HTTP 429: insufficient_quota")
     body = TestClient(main.app).get("/api/engines").json()
-    assert [e["model"] for e in body] == ["a/1", "b/2", "c/3"]
+    assert [e["model"] for e in body] == ["openai/a", "google/b", "google/c"]
     assert body[0]["status"] == "credit"
-    assert body[1] == {"model": "b/2", "status": "unknown", "message": None, "at": None}
+    assert body[1] == {"model": "google/b", "status": "unknown", "message": None, "at": None}

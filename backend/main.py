@@ -9,8 +9,9 @@ import uuid
 import json
 import asyncio
 
-from . import storage, engine_status
-from .config import MAX_CONVERSATION_FILES_BYTES, COUNCIL_MODELS, CHAIRMAN_MODEL, TITLE_MODEL
+from . import storage, engine_status, settings, model_catalog
+from .config import MAX_CONVERSATION_FILES_BYTES, TITLE_MODEL
+from .providers import query_models_parallel
 from .council import run_full_council, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings, build_history, ALL_FAILED_RESPONSE
 from .citations import collect_verified_urls
 
@@ -91,10 +92,65 @@ async def root():
     return {"status": "ok", "service": "LLM Council API"}
 
 
+class CouncilSettings(BaseModel):
+    """Council membership chosen in the UI."""
+    council_models: List[str]
+    chairman_model: str
+
+
+class TestModelsRequest(BaseModel):
+    """Models to ping before saving the council."""
+    models: List[str]
+
+
+def _settings_body() -> Dict[str, Any]:
+    council_models, chairman_model = settings.get_council()
+    return {"council_models": council_models, "chairman_model": chairman_model, "title_model": TITLE_MODEL}
+
+
+@app.get("/api/settings")
+async def get_settings():
+    """Current council membership (saved settings, else config.py)."""
+    return _settings_body()
+
+
+@app.put("/api/settings")
+async def put_settings(request: CouncilSettings):
+    """Save the council; applies from the next question without a restart."""
+    try:
+        settings.set_council(request.council_models, request.chairman_model)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return _settings_body()
+
+
+@app.get("/api/models")
+async def list_models():
+    """Chat models each provider offers, for the settings UI."""
+    return await model_catalog.list_models()
+
+
+@app.post("/api/settings/test")
+async def test_models(request: TestModelsRequest):
+    """Send each model a tiny prompt (a small paid call) to see if it answers."""
+    models = list(dict.fromkeys(request.models))
+    messages = [{"role": "user", "content": "Reply with the single word: OK"}]
+    responses = await query_models_parallel(models, messages, timeout=60.0)
+    results = []
+    for model in models:
+        if responses.get(model) is not None:
+            results.append({"model": model, "ok": True, "status": "ok", "message": None})
+        else:
+            entry = engine_status.get(model)
+            results.append({"model": model, "ok": False, "status": entry["status"], "message": entry["message"]})
+    return results
+
+
 @app.get("/api/engines")
 async def list_engines():
     """Last call outcome of every configured engine (credit/limit exhaustion)."""
-    models = dict.fromkeys([*COUNCIL_MODELS, CHAIRMAN_MODEL, TITLE_MODEL])
+    council_models, chairman_model = settings.get_council()
+    models = dict.fromkeys([*council_models, chairman_model, TITLE_MODEL])
     return [{"model": m, **engine_status.get(m)} for m in models]
 
 

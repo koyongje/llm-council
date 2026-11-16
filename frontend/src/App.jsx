@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
+import CouncilSettings from './components/CouncilSettings';
 import { api } from './api';
 import './App.css';
 
@@ -11,6 +12,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [sendError, setSendError] = useState('');
   const [engines, setEngines] = useState([]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const loadConversations = async () => {
     try {
@@ -213,6 +215,7 @@ function App() {
     <div className="app">
       <Sidebar
         engines={engines}
+        onOpenSettings={() => setSettingsOpen(true)}
         conversations={conversations}
         currentConversationId={currentConversationId}
         onSelectConversation={handleSelectConversation}
@@ -225,6 +228,13 @@ function App() {
         isLoading={isLoading}
         sendError={sendError}
       />
+      {settingsOpen && (
+        <CouncilSettings
+          isBusy={isLoading}
+          onClose={() => setSettingsOpen(false)}
+          onSaved={loadEngines}
+        />
+      )}
     </div>
   );
 }

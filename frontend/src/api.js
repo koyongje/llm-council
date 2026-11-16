@@ -28,6 +28,65 @@ export const api = {
   },
 
   /**
+   * Current council membership.
+   */
+  async getSettings() {
+    const response = await fetch(`${API_BASE}/api/settings`);
+    if (!response.ok) {
+      throw new Error('Failed to get council settings');
+    }
+    return response.json();
+  },
+
+  /**
+   * Save the council; rejects with the server's validation message.
+   */
+  async saveSettings(councilModels, chairmanModel) {
+    const response = await fetch(`${API_BASE}/api/settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ council_models: councilModels, chairman_model: chairmanModel }),
+    });
+    if (!response.ok) {
+      let detail = 'Failed to save council settings';
+      try {
+        const body = await response.json();
+        if (typeof body.detail === 'string') detail = body.detail;
+      } catch {
+        // keep default message
+      }
+      throw new Error(detail);
+    }
+    return response.json();
+  },
+
+  /**
+   * Chat models each provider offers: {provider: {models, error}}.
+   */
+  async listModels() {
+    const response = await fetch(`${API_BASE}/api/models`);
+    if (!response.ok) {
+      throw new Error('Failed to list models');
+    }
+    return response.json();
+  },
+
+  /**
+   * Ping each model once (small paid call): [{model, ok, status, message}].
+   */
+  async testModels(models) {
+    const response = await fetch(`${API_BASE}/api/settings/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ models }),
+    });
+    if (!response.ok) {
+      throw new Error('Failed to test models');
+    }
+    return response.json();
+  },
+
+  /**
    * Create a new conversation.
    */
   async createConversation() {

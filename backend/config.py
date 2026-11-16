@@ -37,6 +37,9 @@ STAGE1_TIMEOUT = 600.0
 # Data directory for conversation storage
 DATA_DIR = "data/conversations"
 
+# Council membership chosen in the UI (overrides COUNCIL_MODELS / CHAIRMAN_MODEL)
+SETTINGS_PATH = "data/settings.json"
+
 # Uploaded reference files (PDFs), stored per conversation
 UPLOADS_DIR = "data/uploads"
 

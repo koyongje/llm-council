@@ -2,7 +2,8 @@
 
 from typing import List, Dict, Any, Optional, Set, Tuple
 from .providers import query_models_parallel, query_model, PdfFile
-from .config import COUNCIL_MODELS, CHAIRMAN_MODEL, TITLE_MODEL, STAGE1_TIMEOUT
+from .config import TITLE_MODEL, STAGE1_TIMEOUT
+from .settings import get_council
 from .citations import format_sources, collect_verified_urls, mark_unverified
 
 CHAIRMAN_ERROR_RESPONSE = "Error: Unable to generate final synthesis."
@@ -63,7 +64,7 @@ async def stage1_collect_responses(
 
     # Query all models in parallel
     responses = await query_models_parallel(
-        COUNCIL_MODELS, messages, files=files or [], web_search=True, timeout=STAGE1_TIMEOUT
+        get_council()[0], messages, files=files or [], web_search=True, timeout=STAGE1_TIMEOUT
     )
 
     # Format results
@@ -147,7 +148,7 @@ Now provide your evaluation and ranking:"""
 
     # Get rankings from all council models in parallel
     responses = await query_models_parallel(
-        COUNCIL_MODELS, messages, files=files or [], web_search=False
+        get_council()[0], messages, files=files or [], web_search=False
     )
 
     # Format results
@@ -216,25 +217,26 @@ Your task as Chairman is to synthesize all of this information into a single, co
 Provide a clear, well-reasoned final answer that represents the council's collective wisdom, ending with the two sections above:"""
 
     messages = (history or []) + [{"role": "user", "content": chairman_prompt}]
+    chairman = get_council()[1]
 
     # Query the chairman model
     response = await query_model(
-        CHAIRMAN_MODEL, messages, files=files or [], web_search=False
+        chairman, messages, files=files or [], web_search=False
     )
     if response is None and files:
         # Large PDFs can push the request over a provider limit; the stage 1
         # responses already carry the file's content, so retry without them.
-        response = await query_model(CHAIRMAN_MODEL, messages, files=[], web_search=False)
+        response = await query_model(chairman, messages, files=[], web_search=False)
 
     if response is None:
         # Fallback if chairman fails
         return {
-            "model": CHAIRMAN_MODEL,
+            "model": chairman,
             "response": CHAIRMAN_ERROR_RESPONSE
         }
 
     return {
-        "model": CHAIRMAN_MODEL,
+        "model": chairman,
         "response": mark_unverified(response.get('content', ''), verified_urls or set())
     }
 

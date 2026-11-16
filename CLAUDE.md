@@ -42,7 +42,7 @@ uv run python -m backend.check_models --full   # live: sends tests/fixtures/samp
 
 ```
 User query (+ history: prior user questions and chairman answers)
-  → Stage 1: all COUNCIL_MODELS in parallel, web search on + attached PDFs
+  → Stage 1: all council models (settings.get_council()) in parallel, web search on + attached PDFs
              → [{model, body, response, sources}]: `body` = raw content (what Stage 2 sees),
                `response` = body + sources block
   → Stage 2: anonymize as "Response A/B/C…" (sources block stripped), PDFs attached,
@@ -59,7 +59,9 @@ Prior turns are sent to the models as history: earlier user questions and chairm
 
 ### Backend (`backend/`, FastAPI)
 
-- `config.py`: `COUNCIL_MODELS`, `CHAIRMAN_MODEL`, `TITLE_MODEL` as `provider/model-id` (provider: `anthropic` | `openai` | `google`), API keys from `.env`, `DATA_DIR`, `UPLOADS_DIR` (`data/uploads`), `MAX_CONVERSATION_FILES_BYTES` (14 MB).
+- `config.py`: default `COUNCIL_MODELS`, `CHAIRMAN_MODEL`, and `TITLE_MODEL` as `provider/model-id` (provider: `anthropic` | `openai` | `google`), API keys from `.env`, `DATA_DIR`, `UPLOADS_DIR` (`data/uploads`), `SETTINGS_PATH`, `MAX_CONVERSATION_FILES_BYTES` (14 MB).
+- `settings.py`: council members + chairman chosen in the UI, saved to `data/settings.json` (2-6 unique members, valid `provider/model-id`). `get_council()` is read at call time by `council.py`, `main.py` and `check_models.py`, so changes apply from the next question without a restart; a missing or invalid file falls back to `config.py`. Never import `COUNCIL_MODELS`/`CHAIRMAN_MODEL` directly elsewhere. `TITLE_MODEL` is not configurable.
+- `model_catalog.py`: lists chat models from each provider's free list endpoint (OpenAI `/v1/models`, Anthropic `/v1/models`, Gemini `/v1beta/models`) with heuristic filters for non-chat models; a failing provider returns `{models: [], error}`.
 - `providers.py`: `query_model()` routes by the `provider/` prefix to raw-httpx clients for Anthropic Messages, OpenAI Responses and Gemini `generateContent`; `query_models_parallel()` uses `asyncio.gather`. To add a provider, add a function to `PROVIDERS`. `query_model(..., files=, web_search=)` returns `{content, reasoning_details, sources:[{url,title}]}`; PDFs go as Anthropic `document` blocks (the last one gets `cache_control` when web search is off, so Stage 3 reads the cache Stage 2 wrote; Stage 1 is not cached because its `tools` differ), OpenAI Responses `input_file` (OpenAI uses `/v1/responses`, `tool_choice: required` for search) and Gemini `inline_data`; search is Anthropic `web_search_20260209`, OpenAI `web_search`, Gemini `google_search`. Failures return `None` and are logged; callers drop failed models and continue (graceful degradation). Empty/whitespace-only content (e.g. OpenAI with no message item, Gemini `RECITATION`) counts as failure and returns `None`.
 - `council.py`: stage functions, `parse_ranking_from_text()`, `calculate_aggregate_rankings()`, `run_full_council()`, and `generate_conversation_title()` (uses `TITLE_MODEL`).
 - `engine_status.py`: in-memory last-call outcome per model (`ok` | `credit` | `rate_limit` | `error` | `unknown`), recorded by `query_model` on every call; `credit` is matched from the providers' billing error text (e.g. OpenAI `insufficient_quota`, Anthropic `credit balance is too low`, Gemini `prepayment credits are depleted`). Served by `GET /api/engines` and shown in the sidebar `EngineStatus` panel, which `App.jsx` refreshes after each stage. Resets on restart.
@@ -68,6 +70,7 @@ Prior turns are sent to the models as history: earlier user questions and chairm
 - `main.py`: two send endpoints:
   - `POST /api/conversations/{id}/message`: batch, returns `{stage1, stage2, stage3, metadata}`.
   - `POST /api/conversations/{id}/message/stream`: **SSE, used by the frontend**. Emits `stage1_start/complete`, `stage2_start/complete` (with metadata), `stage3_start/complete`, `title_complete`, `complete`, or `error`, plus a `: keepalive` SSE comment every `HEARTBEAT_SECONDS` (15 s) while a stage runs; a client disconnect cancels the running stage. Title generation runs concurrently with the stages.
+  - `GET/PUT /api/settings` (council; 400 on invalid), `GET /api/models` (catalog), `POST /api/settings/test` (pings each model with a tiny paid prompt), `GET /api/engines`. The sidebar "위원회 설정" button opens `CouncilSettings.jsx` (save is disabled while a question runs).
   - `POST /api/conversations/{id}/files`: PDF-only upload, 14 MB total per conversation (Gemini caps inline requests at 20 MB and base64 adds ~33%); files are stored with the conversation and passed to every stage.
   - Changes to stage behavior must be mirrored in both endpoints (the stream endpoint calls stage functions directly, not `run_full_council`).
 

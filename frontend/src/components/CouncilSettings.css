@@ -1,0 +1,104 @@
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.settings-modal {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px 24px;
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  font-size: 14px;
+}
+
+.settings-modal h2 {
+  margin: 0 0 16px;
+  font-size: 18px;
+  color: #333;
+}
+
+.settings-section-label {
+  font-weight: 600;
+  color: #333;
+  margin: 12px 0 6px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.settings-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.settings-modal button {
+  padding: 7px 12px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.settings-modal button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.settings-modal .settings-save {
+  background: #4a90e2;
+  border-color: #4a90e2;
+  color: #fff;
+}
+
+.settings-note {
+  margin-top: 14px;
+  font-size: 12px;
+  color: #666;
+  line-height: 1.6;
+}
+
+.settings-error {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #c62828;
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.settings-result {
+  flex-shrink: 0;
+}
+
+.settings-open-btn {
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid #4a90e2;
+  border-radius: 6px;
+  color: #4a90e2;
+  cursor: pointer;
+  font-size: 13px;
+}

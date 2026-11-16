@@ -8,7 +8,8 @@ Run from the project root:
 import asyncio
 import sys
 from pathlib import Path
-from .config import COUNCIL_MODELS, CHAIRMAN_MODEL, TITLE_MODEL
+from .config import TITLE_MODEL
+from .settings import get_council
 from .providers import PdfFile, query_models_parallel
 
 FIXTURE = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "sample.pdf"
@@ -19,7 +20,8 @@ FULL_PROMPT = (
 
 
 async def run_plain():
-    models = list(dict.fromkeys(COUNCIL_MODELS + [CHAIRMAN_MODEL, TITLE_MODEL]))
+    council_models, chairman_model = get_council()
+    models = list(dict.fromkeys(council_models + [chairman_model, TITLE_MODEL]))
     messages = [{"role": "user", "content": "Reply with the single word: OK"}]
     responses = await query_models_parallel(models, messages)
 
@@ -39,7 +41,7 @@ async def run_full():
     pdf = PdfFile(filename=FIXTURE.name, data=FIXTURE.read_bytes())
     messages = [{"role": "user", "content": FULL_PROMPT}]
     responses = await query_models_parallel(
-        COUNCIL_MODELS, messages, files=[pdf], web_search=True
+        get_council()[0], messages, files=[pdf], web_search=True
     )
 
     bad = 0

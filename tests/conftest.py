@@ -1,6 +1,6 @@
 import pytest
 
-from backend import providers
+from backend import providers, settings
 
 
 class FakePost:
@@ -23,3 +23,9 @@ def fake_post(monkeypatch):
     for name in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"):
         monkeypatch.setattr(providers, name, "k")
     return fake
+
+
+@pytest.fixture(autouse=True)
+def isolated_settings(tmp_path, monkeypatch):
+    """Never read or write the real data/settings.json during tests."""
+    monkeypatch.setattr(settings, "SETTINGS_PATH", str(tmp_path / "settings" / "settings.json"))

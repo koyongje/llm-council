@@ -3,6 +3,7 @@ import './Sidebar.css';
 
 export default function Sidebar({
   engines,
+  onOpenSettings,
   conversations,
   currentConversationId,
   onSelectConversation,
@@ -14,6 +15,9 @@ export default function Sidebar({
         <h1>LLM Council</h1>
         <button className="new-conversation-btn" onClick={onNewConversation}>
           + New Conversation
+        </button>
+        <button className="settings-open-btn" onClick={onOpenSettings}>
+          위원회 설정
         </button>
       </div>
 
