@@ -8,6 +8,7 @@ from typing import List, Dict, Any
 import uuid
 import json
 import asyncio
+from contextlib import aclosing
 
 from . import storage, engine_status, settings, model_catalog
 from .config import MAX_CONVERSATION_FILES_BYTES, TITLE_MODEL
@@ -43,8 +44,10 @@ async def _with_heartbeat(awaitable, result: List[Any]):
     Run `awaitable`, yielding an SSE keepalive comment every HEARTBEAT_SECONDS
     until it finishes, then append its return value to `result`.
 
-    If the client disconnects, the generator is closed and the stage is
-    cancelled instead of continuing to spend API calls nobody will read.
+    If the client disconnects (or presses "중지"), the generator is closed and
+    the stage is cancelled instead of continuing to spend API calls nobody will
+    read. Callers wrap it in `aclosing` so that happens immediately, not
+    whenever the event loop finalizes the abandoned generator.
     """
     task = asyncio.ensure_future(awaitable)
     try:
@@ -264,20 +267,21 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
     history = build_history(prior)
 
     async def event_generator():
+        # The user message is saved together with the answer at the end, so
+        # a failed or stopped run leaves nothing behind (the client drops its copy too)
+
+        # Start title generation in parallel (don't await yet)
+        title_task = None
+        if is_first_message:
+            title_task = asyncio.create_task(generate_conversation_title(request.content))
+
         try:
-            # The user message is saved together with the answer at the end, so
-            # a failed run leaves nothing behind (the client drops its copy too)
-
-            # Start title generation in parallel (don't await yet)
-            title_task = None
-            if is_first_message:
-                title_task = asyncio.create_task(generate_conversation_title(request.content))
-
             # Stage 1: Collect responses
             yield _sse({'type': 'stage1_start'})
             box: List[Any] = []
-            async for ping in _with_heartbeat(stage1_collect_responses(request.content, history, files), box):
-                yield ping
+            async with aclosing(_with_heartbeat(stage1_collect_responses(request.content, history, files), box)) as beats:
+                async for ping in beats:
+                    yield ping
             stage1_results = box.pop()
             yield _sse({'type': 'stage1_complete', 'data': stage1_results})
 
@@ -295,19 +299,21 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
 
             # Stage 2: Collect rankings
             yield _sse({'type': 'stage2_start'})
-            async for ping in _with_heartbeat(stage2_collect_rankings(request.content, stage1_results, history, files), box):
-                yield ping
+            async with aclosing(_with_heartbeat(stage2_collect_rankings(request.content, stage1_results, history, files), box)) as beats:
+                async for ping in beats:
+                    yield ping
             stage2_results, label_to_model = box.pop()
             aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
             yield _sse({'type': 'stage2_complete', 'data': stage2_results, 'metadata': {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings}})
 
             # Stage 3: Synthesize final answer
             yield _sse({'type': 'stage3_start'})
-            async for ping in _with_heartbeat(stage3_synthesize_final(
+            async with aclosing(_with_heartbeat(stage3_synthesize_final(
                 request.content, stage1_results, stage2_results, history, files,
                 collect_verified_urls(prior, stage1_results)
-            ), box):
-                yield ping
+            ), box)) as beats:
+                async for ping in beats:
+                    yield ping
             stage3_result = box.pop()
             yield _sse({'type': 'stage3_complete', 'data': stage3_result})
 
@@ -332,6 +338,11 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
         except Exception as e:
             # Send error event
             yield _sse({'type': 'error', 'message': str(e)})
+        finally:
+            # Client stopped or disconnected mid-run: nothing will be saved,
+            # so don't keep paying for a title nobody will see
+            if title_task and not title_task.done():
+                title_task.cancel()
 
     return StreamingResponse(
         event_generator(),

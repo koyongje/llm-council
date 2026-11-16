@@ -8,6 +8,7 @@ import './ChatInterface.css';
 export default function ChatInterface({
   conversation,
   onSendMessage,
+  onStop,
   onUploadFile,
   isLoading,
   sendError,
@@ -181,13 +182,19 @@ export default function ChatInterface({
           disabled={isLoading}
           rows={3}
         />
-        <button
-          type="submit"
-          className="send-button"
-          disabled={!input.trim() || isLoading}
-        >
-          Send
-        </button>
+        {isLoading ? (
+          <button type="button" className="stop-button" onClick={onStop}>
+            중지
+          </button>
+        ) : (
+          <button
+            type="submit"
+            className="send-button"
+            disabled={!input.trim()}
+          >
+            Send
+          </button>
+        )}
       </form>
     </div>
   );

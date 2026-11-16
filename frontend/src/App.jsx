@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
 import CouncilSettings from './components/CouncilSettings';
@@ -15,6 +15,8 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Phone layout only: the sidebar is a slide-in drawer (see App.css)
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Aborts the running council request (the "중지" button)
+  const abortRef = useRef(null);
 
   const loadConversations = async () => {
     try {
@@ -105,6 +107,8 @@ function App() {
 
     setIsLoading(true);
     setSendError('');
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
       // Optimistically add user message to UI
       const userMessage = { role: 'user', content };
@@ -198,21 +202,33 @@ function App() {
           default:
             console.log('Unknown event type:', eventType);
         }
-      });
+      }, controller.signal);
 
       if (!finished) {
         throw new Error('The connection to the server ended before the council finished.');
       }
     } catch (error) {
-      console.error('Failed to send message:', error);
-      // Remove optimistic messages on error
+      const stopped = error.name === 'AbortError';
+      if (!stopped) console.error('Failed to send message:', error);
+      // Remove optimistic messages: the backend saved nothing for this turn
       setCurrentConversation((prev) => ({
         ...prev,
         messages: prev.messages.slice(0, -2),
       }));
-      setSendError(error.message || 'Failed to send message.');
+      setSendError(
+        stopped
+          ? '질문을 중지했습니다. 이미 진행된 모델 호출 비용은 청구될 수 있습니다.'
+          : error.message || 'Failed to send message.'
+      );
       setIsLoading(false);
+      if (stopped) loadEngines();
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null;
     }
+  };
+
+  const handleStop = () => {
+    abortRef.current?.abort();
   };
 
   return (
@@ -245,6 +261,7 @@ function App() {
         <ChatInterface
           conversation={currentConversation}
           onSendMessage={handleSendMessage}
+          onStop={handleStop}
           onUploadFile={handleUploadFile}
           isLoading={isLoading}
           sendError={sendError}

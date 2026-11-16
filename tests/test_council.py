@@ -287,3 +287,40 @@ async def test_stage3_critique_wording_limits_dissent_and_closes_with_sections(f
     prompt = fake_council.single_calls[-1]["messages"][-1]["content"]
     assert "materially different conclusion" in prompt and "or reasoning" not in prompt
     assert "ending with the two sections above" in prompt.splitlines()[-1]
+
+
+async def test_stopping_the_stream_cancels_stage_and_title_and_saves_nothing(tmp_path, monkeypatch):
+    # The "중지" button aborts the fetch; Starlette then closes the SSE generator.
+    import asyncio
+    import uuid
+    import backend.main as main
+    from backend import storage
+    monkeypatch.setattr(storage, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(storage, "UPLOADS_DIR", str(tmp_path / "up"))
+    monkeypatch.setattr(main, "HEARTBEAT_SECONDS", 0.01)
+    cancelled = []
+
+    async def hang(label):
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            cancelled.append(label)
+            raise
+
+    async def stage1(*a, **k):
+        return await hang("stage1")
+
+    async def title(q):
+        return await hang("title")
+
+    monkeypatch.setattr(main, "stage1_collect_responses", stage1)
+    monkeypatch.setattr(main, "generate_conversation_title", title)
+    cid = storage.create_conversation(str(uuid.uuid4()))["id"]
+    resp = await main.send_message_stream(cid, main.SendMessageRequest(content="hi"))
+    gen = resp.body_iterator
+    assert '"stage1_start"' in await gen.__anext__()
+    assert await gen.__anext__() == ": keepalive\n\n"
+    await gen.aclose()  # client disconnected
+    await asyncio.sleep(0)  # one tick: cancellation must be immediate
+    assert sorted(cancelled) == ["stage1", "title"]
+    assert storage.get_conversation(cid)["messages"] == []
