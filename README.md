@@ -70,7 +70,7 @@ Each id is `provider/model-id`, where provider is `anthropic`, `openai` or `goog
 ```bash
 ./start.sh
 ```
-# ./start.ps1 -> 이것이 실행 명령임돠 ~~~
+# ./start.ps1 -> 이것이 실행 명령임돠 ~~~, ./start.ps1 -remote -> tilescale 서버용으로 실행..
 
 **Option 2: Run manually**
 
