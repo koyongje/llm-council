@@ -102,3 +102,13 @@
   cursor: pointer;
   font-size: 13px;
 }
+
+@media (max-width: 768px) {
+  .settings-modal {
+    padding: 16px;
+  }
+
+  .settings-row input {
+    font-size: 16px; /* avoid iOS zoom on focus */
+  }
+}

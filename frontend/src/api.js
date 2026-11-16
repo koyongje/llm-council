@@ -2,7 +2,9 @@
  * API client for the LLM Council backend.
  */
 
-const API_BASE = 'http://localhost:8001';
+// Same-origin: the Vite dev server proxies /api to the backend (vite.config.js),
+// so the app works from any address it is opened at (localhost or Tailscale).
+const API_BASE = '';
 
 export const api = {
   /**

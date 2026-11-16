@@ -50,8 +50,11 @@ export default function ChatInterface({
   };
 
   const handleKeyDown = (e) => {
-    // Submit on Enter (without Shift)
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // Submit on Enter (without Shift). Not while a Korean IME is composing a
+    // syllable, and not on touch screens, where there is no Shift key, so
+    // Enter makes a new line and the send button submits.
+    const touch = window.matchMedia('(pointer: coarse)').matches;
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !touch) {
       e.preventDefault();
       handleSubmit(e);
     }

@@ -13,6 +13,8 @@ function App() {
   const [sendError, setSendError] = useState('');
   const [engines, setEngines] = useState([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Phone layout only: the sidebar is a slide-in drawer (see App.css)
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const loadConversations = async () => {
     try {
@@ -61,6 +63,7 @@ function App() {
         ...conversations,
       ]);
       setCurrentConversationId(newConv.id);
+      setSidebarOpen(false);
     } catch (error) {
       console.error('Failed to create conversation:', error);
     }
@@ -68,6 +71,7 @@ function App() {
 
   const handleSelectConversation = (id) => {
     setCurrentConversationId(id);
+    setSidebarOpen(false);
   };
 
   const handleUploadFile = async (file) => {
@@ -212,22 +216,40 @@ function App() {
   };
 
   return (
-    <div className="app">
+    <div className={`app ${sidebarOpen ? 'sidebar-open' : ''}`}>
       <Sidebar
         engines={engines}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => {
+          setSettingsOpen(true);
+          setSidebarOpen(false);
+        }}
         conversations={conversations}
         currentConversationId={currentConversationId}
         onSelectConversation={handleSelectConversation}
         onNewConversation={handleNewConversation}
       />
-      <ChatInterface
-        conversation={currentConversation}
-        onSendMessage={handleSendMessage}
-        onUploadFile={handleUploadFile}
-        isLoading={isLoading}
-        sendError={sendError}
-      />
+      <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />
+      <div className="main-pane">
+        <div className="mobile-topbar">
+          <button
+            className="menu-btn"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="대화 목록 열기"
+          >
+            ☰
+          </button>
+          <span className="mobile-title">
+            {currentConversation?.title || 'LLM Council'}
+          </span>
+        </div>
+        <ChatInterface
+          conversation={currentConversation}
+          onSendMessage={handleSendMessage}
+          onUploadFile={handleUploadFile}
+          isLoading={isLoading}
+          sendError={sendError}
+        />
+      </div>
       {settingsOpen && (
         <CouncilSettings
           isBusy={isLoading}

@@ -18,7 +18,8 @@ cd frontend && npm install           # frontend deps
 
 # Run (both servers)
 ./start.sh                           # bash
-./start.ps1                          # Windows PowerShell (local, untracked)
+./start.ps1                          # Windows PowerShell
+./start.ps1 -Remote                  # also reachable from other devices via Tailscale (start.sh --remote)
 
 # Run manually
 uv run python -m backend.main        # backend on :8001 — must run from project root
@@ -86,7 +87,9 @@ Prior turns are sent to the models as history: earlier user questions and chairm
 - **De-anonymization is client-side**: models only ever see "Response X" labels; Stage2.jsx substitutes bold model names for display.
 - **Stage 2 prompt format is load-bearing**: models must end with a `FINAL RANKING:` header and a numbered list (`1. Response C`). `parse_ranking_from_text()` parses that, with a fallback regex that grabs any `Response X` in order. Changing the prompt can break parsing.
 - **Timeouts and search caps**: Stage 1 calls use `STAGE1_TIMEOUT` (600 s), other calls 300 s. Anthropic web search is capped at `WEB_SEARCH_MAX_USES` (5) per request; without the cap Claude searched so much on long planning requests that Stage 1 hit `ReadTimeout` and Claude was dropped.
-- **Port 8001, not 8000** (user has another app on 8000). If changed, update both `backend/main.py` and `frontend/src/api.js`. CORS in `main.py` allows only `localhost:5173` and `localhost:3000`.
+- **Port 8001, not 8000** (user has another app on 8000). If changed, update both `backend/main.py` and the `/api` proxy in `frontend/vite.config.js`. CORS in `main.py` allows only `localhost:5173` and `localhost:3000`.
+- **Remote access (Tailscale)**: the browser only talks to the Vite dev server; `api.js` uses same-origin `/api/...` and Vite proxies it to the backend, which stays bound to `127.0.0.1`. Vite binds to `LLM_COUNCIL_HOST` (default `localhost`); `start.ps1 -Remote` / `start.sh --remote` set it to the PC's Tailscale IP, so the app is reachable inside the tailnet but not on the LAN. `allowedHosts` admits `.ts.net` MagicDNS names. There is no login: never bind to `0.0.0.0` or expose the app publicly, since anyone reaching it can spend the API keys.
+- **Phone layout** (≤768px, `App.css`): the sidebar becomes a slide-in drawer opened from a top bar. On touch screens Enter inserts a newline (no Shift key) and the send button submits; Enter is also ignored while an IME is composing (Korean input).
 - **Relative imports** in `backend/` (`from .config import …`): always run as `python -m backend.main` from the project root.
 - **Markdown rendering**: wrap every `ReactMarkdown` in `<div className="markdown-content">` (styles in `index.css`).
 - **Styling**: light theme, primary color `#4a90e2`; Stage 3 uses a green tint (`#f0fff0`).

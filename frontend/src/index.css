@@ -24,6 +24,7 @@ body {
 
 #root {
   height: 100vh;
+  height: 100dvh; /* phones: excludes the browser's address bar */
   width: 100vw;
   overflow: hidden;
 }
