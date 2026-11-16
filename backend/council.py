@@ -17,6 +17,12 @@ TABLE_INSTRUCTION = """The user attached document(s). Start with a 1-2 sentence 
 | # | 기획서 위치 | 현재 내용 | 수정 제안 (최신 데이터) | 근거·출처 |
 Add brief notes below the table only if needed. If the user's question is not a request for revisions (for example, a follow-up about one item), answer in free form instead."""
 
+CRITIQUE_INSTRUCTION = """After the main answer (and after any table and notes), always end with these two short sections, including for follow-up questions:
+## 주요 비판
+2-5 bullet points on the key weaknesses, risks and uncertainties of your final answer, drawn from the Stage 2 evaluations and caveats raised in Stage 1.
+## 반대 의견
+Name each model that reached a materially different conclusion or recommendation from your final answer and summarize its reasoning. Never invent disagreement to fill this section: if there was no substantive dissent, write "실질적인 반대 의견 없음"."""
+
 
 def build_history(prior_messages: List[Dict[str, Any]]) -> List[Dict[str, str]]:
     """Turn prior user/assistant turns into chat history, skipping unpaired or failed turns."""
@@ -28,7 +34,9 @@ def build_history(prior_messages: List[Dict[str, Any]]) -> List[Dict[str, str]]:
         if not response or response in (CHAIRMAN_ERROR_RESPONSE, ALL_FAILED_RESPONSE):
             continue
         history.append({"role": "user", "content": user["content"]})
-        history.append({"role": "assistant", "content": response})
+        # The dissent section names models; keep it out of history so later
+        # Stage 2 evaluators cannot map a known stance back to a model
+        history.append({"role": "assistant", "content": response.split("\n## 반대 의견")[0].rstrip()})
     return history
 
 
@@ -203,8 +211,9 @@ Your task as Chairman is to synthesize all of this information into a single, co
 - Any patterns of agreement or disagreement
 
 {CHAIRMAN_URL_RULE}
-{TABLE_INSTRUCTION + chr(10) if files else ''}
-Provide a clear, well-reasoned final answer that represents the council's collective wisdom:"""
+{TABLE_INSTRUCTION + chr(10) if files else ''}{CRITIQUE_INSTRUCTION}
+
+Provide a clear, well-reasoned final answer that represents the council's collective wisdom, ending with the two sections above:"""
 
     messages = (history or []) + [{"role": "user", "content": chairman_prompt}]
 

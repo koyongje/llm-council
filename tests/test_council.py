@@ -261,3 +261,29 @@ def test_sse_sends_keepalive_comments_while_a_stage_runs(tmp_path, monkeypatch):
     # SSE comment lines keep the connection visibly alive; data events are unchanged
     assert ": keepalive" in r.text
     assert r.text.index(": keepalive") < r.text.index('"stage1_complete"')
+
+
+async def test_stage3_prompt_asks_for_critique_and_dissent(fake_council):
+    fake_council.single_reply = {"content": "answer", "sources": []}
+    await stage3_synthesize_final("q", S1, S2)
+    prompt = fake_council.single_calls[-1]["messages"][-1]["content"]
+    assert "## 주요 비판" in prompt and "## 반대 의견" in prompt
+    assert "실질적인 반대 의견 없음" in prompt
+
+    await stage3_synthesize_final("q", S1, S2, files=[PDF])
+    prompt = fake_council.single_calls[-1]["messages"][-1]["content"]
+    assert prompt.index("기획서 위치") < prompt.index("## 주요 비판") < prompt.index("## 반대 의견")
+
+
+def test_build_history_drops_dissent_section_so_names_stay_hidden():
+    answer = "결론\n\n## 주요 비판\n- 약점\n\n## 반대 의견\n- openai/gpt-5.1: 다른 결론"
+    prior = [{"role": "user", "content": "q"}, {"role": "assistant", "stage3": {"response": answer}}]
+    assert build_history(prior)[1]["content"] == "결론\n\n## 주요 비판\n- 약점"
+
+
+async def test_stage3_critique_wording_limits_dissent_and_closes_with_sections(fake_council):
+    fake_council.single_reply = {"content": "answer", "sources": []}
+    await stage3_synthesize_final("q", S1, S2)
+    prompt = fake_council.single_calls[-1]["messages"][-1]["content"]
+    assert "materially different conclusion" in prompt and "or reasoning" not in prompt
+    assert "ending with the two sections above" in prompt.splitlines()[-1]

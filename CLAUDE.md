@@ -51,10 +51,11 @@ User query (+ history: prior user questions and chairman answers)
              vote for its own response is dropped and the rest re-ranked from 1)
   → Stage 3: CHAIRMAN_MODEL synthesizes from stage1 + stage2 with PDFs attached
              (if that call fails, retried once without PDFs before the error response);
-             links not found in any search result are marked ⚠️ 미검증
+             links not found in any search result are marked ⚠️ 미검증;
+             the answer always ends with `## 주요 비판` and `## 반대 의견` sections
 ```
 
-Prior turns are sent to the models as history: earlier user questions and chairman (Stage 3) answers only. Earlier Stage 1/2 texts are never included.
+Prior turns are sent to the models as history: earlier user questions and chairman (Stage 3) answers only. Earlier Stage 1/2 texts are never included. `build_history` cuts each chairman answer at `## 반대 의견`, because that section names models and would let later Stage 2 evaluators de-anonymize responses.
 
 ### Backend (`backend/`, FastAPI)
 
@@ -85,4 +86,4 @@ Prior turns are sent to the models as history: earlier user questions and chairm
 - **Relative imports** in `backend/` (`from .config import …`): always run as `python -m backend.main` from the project root.
 - **Markdown rendering**: wrap every `ReactMarkdown` in `<div className="markdown-content">` (styles in `index.css`).
 - **Styling**: light theme, primary color `#4a90e2`; Stage 3 uses a green tint (`#f0fff0`).
-- **Reference files & web search**: web search is always on in Stage 1 (sources block appended to each response); PDFs go to Stages 1-3. Stage 2 sees responses *without* the sources block. History sent to models is only prior user question + chairman answer. The chairman emits a table only when files are attached, and unverifiable URLs are marked `⚠️ 미검증`. Per-conversation PDF limit is 14 MB because Gemini's 20 MB inline request cap applies after base64 encoding (+~33%).
+- **Reference files & web search**: web search is always on in Stage 1 (sources block appended to each response); PDFs go to Stages 1-3. Stage 2 sees responses *without* the sources block. History sent to models is only prior user question + chairman answer. The chairman emits a table only when files are attached, and unverifiable URLs are marked `⚠️ 미검증`. Every chairman answer (follow-ups included) ends with `## 주요 비판` (2-5 points) and `## 반대 의견` (dissenting models by name, or "실질적인 반대 의견 없음"; `CRITIQUE_INSTRUCTION` in `council.py` forbids inventing dissent). Per-conversation PDF limit is 14 MB because Gemini's 20 MB inline request cap applies after base64 encoding (+~33%).
