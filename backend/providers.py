@@ -5,6 +5,7 @@ import base64
 import logging
 import httpx
 from dataclasses import dataclass
+from . import engine_status
 from typing import List, Dict, Any, Optional
 from .config import (
     ANTHROPIC_API_KEY,
@@ -220,11 +221,14 @@ async def query_model(
         result = await PROVIDERS[provider](model_id, messages, timeout, files, web_search)
         if not (result.get("content") or "").strip():
             logger.warning("Error querying model %s: empty response content", model)
+            engine_status.record_failure(model, "empty response content")
             return None
+        engine_status.record_success(model)
         return result
 
     except Exception as e:
         logger.warning("Error querying model %s: %s: %s", model, type(e).__name__, e)
+        engine_status.record_failure(model, str(e) or type(e).__name__)
         return None
 
 

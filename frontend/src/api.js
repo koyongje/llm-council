@@ -17,6 +17,17 @@ export const api = {
   },
 
   /**
+   * Last call outcome of every configured engine (credit/limit exhaustion).
+   */
+  async getEngineStatus() {
+    const response = await fetch(`${API_BASE}/api/engines`);
+    if (!response.ok) {
+      throw new Error('Failed to get engine status');
+    }
+    return response.json();
+  },
+
+  /**
    * Create a new conversation.
    */
   async createConversation() {

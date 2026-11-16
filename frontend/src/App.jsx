@@ -10,6 +10,7 @@ function App() {
   const [currentConversation, setCurrentConversation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [sendError, setSendError] = useState('');
+  const [engines, setEngines] = useState([]);
 
   const loadConversations = async () => {
     try {
@@ -17,6 +18,14 @@ function App() {
       setConversations(convs);
     } catch (error) {
       console.error('Failed to load conversations:', error);
+    }
+  };
+
+  const loadEngines = async () => {
+    try {
+      setEngines(await api.getEngineStatus());
+    } catch (error) {
+      console.error('Failed to load engine status:', error);
     }
   };
 
@@ -32,6 +41,7 @@ function App() {
   // Load conversations on mount
   useEffect(() => {
     loadConversations();
+    loadEngines();
   }, []);
 
   // Load conversation details when selected
@@ -124,6 +134,10 @@ function App() {
       // Send message with streaming
       await api.sendMessageStream(currentConversationId, content, (eventType, event) => {
         if (eventType === 'complete' || eventType === 'error') finished = true;
+        // Any finished stage may have changed an engine's credit/limit status
+        if (eventType.endsWith('_complete') || eventType === 'complete' || eventType === 'error') {
+          loadEngines();
+        }
         switch (eventType) {
           case 'stage1_start':
             updateLastMessage({ loading: { stage1: true } });
@@ -198,6 +212,7 @@ function App() {
   return (
     <div className="app">
       <Sidebar
+        engines={engines}
         conversations={conversations}
         currentConversationId={currentConversationId}
         onSelectConversation={handleSelectConversation}

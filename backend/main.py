@@ -9,8 +9,8 @@ import uuid
 import json
 import asyncio
 
-from . import storage
-from .config import MAX_CONVERSATION_FILES_BYTES
+from . import storage, engine_status
+from .config import MAX_CONVERSATION_FILES_BYTES, COUNCIL_MODELS, CHAIRMAN_MODEL, TITLE_MODEL
 from .council import run_full_council, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings, build_history, ALL_FAILED_RESPONSE
 from .citations import collect_verified_urls
 
@@ -89,6 +89,13 @@ class Conversation(BaseModel):
 async def root():
     """Health check endpoint."""
     return {"status": "ok", "service": "LLM Council API"}
+
+
+@app.get("/api/engines")
+async def list_engines():
+    """Last call outcome of every configured engine (credit/limit exhaustion)."""
+    models = dict.fromkeys([*COUNCIL_MODELS, CHAIRMAN_MODEL, TITLE_MODEL])
+    return [{"model": m, **engine_status.get(m)} for m in models]
 
 
 @app.get("/api/conversations", response_model=List[ConversationMetadata])

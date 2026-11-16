@@ -1,6 +1,8 @@
+import EngineStatus from './EngineStatus';
 import './Sidebar.css';
 
 export default function Sidebar({
+  engines,
   conversations,
   currentConversationId,
   onSelectConversation,
@@ -37,6 +39,8 @@ export default function Sidebar({
           ))
         )}
       </div>
+
+      <EngineStatus engines={engines} />
     </div>
   );
 }
