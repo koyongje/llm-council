@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from .config import TITLE_MODEL
 from .settings import get_council
-from .providers import PdfFile, query_models_parallel
+from .providers import Attachment, query_models_parallel
 
 FIXTURE = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "sample.pdf"
 FULL_PROMPT = (
@@ -38,7 +38,7 @@ async def run_plain():
 
 
 async def run_full():
-    pdf = PdfFile(filename=FIXTURE.name, data=FIXTURE.read_bytes())
+    pdf = Attachment(filename=FIXTURE.name, data=FIXTURE.read_bytes())
     messages = [{"role": "user", "content": FULL_PROMPT}]
     responses = await query_models_parallel(
         get_council()[0], messages, files=[pdf], web_search=True

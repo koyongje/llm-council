@@ -7,9 +7,9 @@ from backend.council import (
     stage2_collect_rankings,
     stage3_synthesize_final,
 )
-from backend.providers import PdfFile
+from backend.providers import Attachment
 
-PDF = PdfFile("a.pdf", b"%PDF-1")
+PDF = Attachment("a.pdf", b"%PDF-1")
 S1 = [{"model": "m", "response": "r1", "sources": []}]
 S2 = [{"model": "m", "ranking": "FINAL RANKING:\n1. Response A", "parsed_ranking": ["Response A"]}]
 

@@ -11,7 +11,7 @@ import asyncio
 from contextlib import aclosing
 
 from . import storage, engine_status, settings, model_catalog
-from .config import MAX_CONVERSATION_FILES_BYTES, TITLE_MODEL
+from .config import MAX_CONVERSATION_FILES_BYTES, MAX_IMAGE_BYTES, TITLE_MODEL
 from .providers import query_models_parallel
 from .council import run_full_council, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_aggregate_rankings, build_history, ALL_FAILED_RESPONSE
 from .citations import collect_verified_urls
@@ -182,7 +182,7 @@ async def get_conversation(conversation_id: str):
 
 @app.post("/api/conversations/{conversation_id}/files")
 async def upload_file(conversation_id: str, file: UploadFile = File(...)):
-    """Attach a PDF reference file to a conversation."""
+    """Attach a PDF or image (PNG, JPEG, WebP) reference file to a conversation."""
     conversation = storage.get_conversation(conversation_id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -199,10 +199,14 @@ async def upload_file(conversation_id: str, file: UploadFile = File(...)):
         chunks.append(chunk)
     data = b"".join(chunks)
 
-    if not data.startswith(b"%PDF-"):
-        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+    media_type = storage.detect_media_type(data)
+    if media_type is None:
+        raise HTTPException(status_code=400, detail="Only PDF, PNG, JPEG and WebP files are supported")
+    if media_type.startswith("image/") and len(data) > MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=400, detail="Images must be 5 MB or smaller")
 
-    return storage.add_file(conversation_id, file.filename or "document.pdf", data)
+    default_name = "document.pdf" if media_type == "application/pdf" else "image." + storage.FILE_EXTENSIONS[media_type]
+    return storage.add_file(conversation_id, file.filename or default_name, data, media_type)
 
 
 @app.post("/api/conversations/{conversation_id}/message")

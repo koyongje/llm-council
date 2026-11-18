@@ -37,7 +37,7 @@ def test_upload_pdf_attaches_to_conversation(client):
 def test_rejects_non_pdf(client, uploads_dir):
     cid = client.post("/api/conversations", json={}).json()["id"]
     r = client.post(f"/api/conversations/{cid}/files", files={"file": ("x.pdf", b"PK\x03\x04", "application/pdf")})
-    assert r.status_code == 400 and r.json()["detail"] == "Only PDF files are supported"
+    assert r.status_code == 400 and r.json()["detail"] == "Only PDF, PNG, JPEG and WebP files are supported"
     assert not any(uploads_dir.rglob("*.pdf"))
 
 
@@ -76,7 +76,7 @@ def test_invalid_id_never_touches_filesystem(data_dir, uploads_dir):
     assert storage.get_conversation("../x") is None
     assert storage.get_files("../../x") == []
     with pytest.raises(ValueError):
-        storage.add_file("../../x", "a.pdf", b"%PDF-")
+        storage.add_file("../../x", "a.pdf", b"%PDF-", "application/pdf")
 
 
 def test_get_files_skips_missing_pdf(client, uploads_dir):
@@ -101,3 +101,39 @@ def test_saved_conversation_is_valid_json_and_leaves_no_temp_files(client, data_
     storage.update_conversation_title(cid, "제목")
     assert [p.name for p in data_dir.iterdir()] == [f"{cid}.json"]
     assert storage.get_conversation(cid)["title"] == "제목"
+
+
+@pytest.mark.parametrize("name,data,media_type", [
+    ("a.png", b"\x89PNG\r\n\x1a\n" + b"x" * 4, "image/png"),
+    ("a.jpg", b"\xff\xd8\xff\xe0" + b"x" * 4, "image/jpeg"),
+    ("a.webp", b"RIFF\x00\x00\x00\x00WEBPVP8 ", "image/webp"),
+])
+def test_upload_image_attaches_with_media_type(client, name, data, media_type):
+    cid = client.post("/api/conversations", json={}).json()["id"]
+    r = client.post(f"/api/conversations/{cid}/files", files={"file": (name, data, "application/octet-stream")})
+    assert r.status_code == 200 and r.json()["media_type"] == media_type
+    [f] = storage.get_files(cid)
+    assert (f.filename, f.data, f.media_type) == (name, data, media_type)
+
+
+def test_rejects_gif(client):
+    cid = client.post("/api/conversations", json={}).json()["id"]
+    r = client.post(f"/api/conversations/{cid}/files", files={"file": ("a.gif", b"GIF89a....", "image/gif")})
+    assert r.status_code == 400 and r.json()["detail"] == "Only PDF, PNG, JPEG and WebP files are supported"
+
+
+def test_rejects_image_over_per_image_limit(client, monkeypatch):
+    monkeypatch.setattr("backend.main.MAX_IMAGE_BYTES", 10)
+    cid = client.post("/api/conversations", json={}).json()["id"]
+    r = client.post(f"/api/conversations/{cid}/files", files={"file": ("a.png", b"\x89PNG\r\n\x1a\n" + b"x" * 10, "image/png")})
+    assert r.status_code == 400 and r.json()["detail"] == "Images must be 5 MB or smaller"
+
+
+def test_legacy_file_entry_without_media_type_is_pdf(client, uploads_dir):
+    cid = client.post("/api/conversations", json={}).json()["id"]
+    client.post(f"/api/conversations/{cid}/files", files={"file": ("a.pdf", b"%PDF-1", "application/pdf")})
+    conv = storage.get_conversation(cid)
+    del conv["files"][0]["media_type"]
+    storage.save_conversation(conv)
+    [f] = storage.get_files(cid)
+    assert f.media_type == "application/pdf" and f.data == b"%PDF-1"

@@ -40,8 +40,11 @@ DATA_DIR = "data/conversations"
 # Council membership chosen in the UI (overrides COUNCIL_MODELS / CHAIRMAN_MODEL)
 SETTINGS_PATH = "data/settings.json"
 
-# Uploaded reference files (PDFs), stored per conversation
+# Uploaded reference files (PDFs and images), stored per conversation
 UPLOADS_DIR = "data/uploads"
 
 # Max total size of PDFs attached to one conversation
 MAX_CONVERSATION_FILES_BYTES = 14 * 1024 * 1024
+
+# Max size of one image (Anthropic rejects base64 images over 5 MB)
+MAX_IMAGE_BYTES = 5 * 1024 * 1024

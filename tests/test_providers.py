@@ -1,6 +1,6 @@
-from backend.providers import PdfFile, query_model
+from backend.providers import Attachment, query_model
 
-PDF = PdfFile("plan.pdf", b"%PDF-1.4 x")
+PDF = Attachment("plan.pdf", b"%PDF-1.4 x")
 
 
 async def test_anthropic_sends_pdf_and_web_search_and_extracts_sources(fake_post):
@@ -96,3 +96,29 @@ async def test_anthropic_skips_cache_with_web_search(fake_post):
     blocks = fake_post.calls[0][1]["messages"][-1]["content"]
     assert all("cache_control" not in b for b in blocks)
 
+
+
+PNG = Attachment("chart.png", b"\x89PNG\r\n\x1a\nx", "image/png")
+
+
+async def test_anthropic_sends_image_block(fake_post):
+    fake_post.reply = {"stop_reason": "end_turn", "content": [{"type": "text", "text": "a"}]}
+    await query_model("anthropic/claude-opus-5-5", [{"role": "user", "content": "q"}], files=[PDF, PNG])
+    blocks = fake_post.calls[0][1]["messages"][-1]["content"]
+    assert blocks[0]["type"] == "document"
+    assert blocks[1]["type"] == "image" and blocks[1]["source"]["media_type"] == "image/png"
+    assert blocks[1]["cache_control"] == {"type": "ephemeral"}
+
+
+async def test_openai_sends_input_image(fake_post):
+    fake_post.reply = {"output": [{"type": "message", "content": [{"type": "output_text", "text": "a"}]}]}
+    await query_model("openai/gpt-5.1", [{"role": "user", "content": "q"}], files=[PNG])
+    part = fake_post.calls[0][1]["input"][-1]["content"][0]
+    assert part["type"] == "input_image"
+    assert part["image_url"].startswith("data:image/png;base64,")
+
+
+async def test_gemini_sends_image_mime_type(fake_post):
+    fake_post.reply = {"candidates": [{"content": {"parts": [{"text": "a"}]}}]}
+    await query_model("google/gemini-3.8-flash", [{"role": "user", "content": "q"}], files=[PNG])
+    assert fake_post.calls[0][1]["contents"][-1]["parts"][0]["inline_data"]["mime_type"] == "image/png"

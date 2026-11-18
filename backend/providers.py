@@ -28,9 +28,14 @@ Source = Dict[str, str]
 
 
 @dataclass
-class PdfFile:
+class Attachment:
     filename: str
     data: bytes
+    media_type: str = "application/pdf"
+
+    @property
+    def is_image(self) -> bool:
+        return self.media_type.startswith("image/")
 
 
 async def _post(url: str, headers: Dict[str, str], payload: Dict[str, Any], timeout: float) -> Dict[str, Any]:
@@ -47,15 +52,19 @@ def _require_key(key: Optional[str], env_name: str) -> str:
     return key
 
 
-def _b64(pdf: PdfFile) -> str:
-    return base64.standard_b64encode(pdf.data).decode()
+def _b64(f: Attachment) -> str:
+    return base64.standard_b64encode(f.data).decode()
+
+
+def _data_url(f: Attachment) -> str:
+    return f"data:{f.media_type};base64,{_b64(f)}"
 
 
 async def _query_anthropic(
     model: str,
     messages: List[Dict[str, str]],
     timeout: float,
-    files: Optional[List[PdfFile]] = None,
+    files: Optional[List[Attachment]] = None,
     web_search: bool = False,
 ) -> Dict[str, Any]:
     headers = {
@@ -66,11 +75,14 @@ async def _query_anthropic(
     msgs: List[Dict[str, Any]] = [dict(m) for m in messages]
     if files:
         blocks = [
-            {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": _b64(f)}}
+            {
+                "type": "image" if f.is_image else "document",
+                "source": {"type": "base64", "media_type": f.media_type, "data": _b64(f)},
+            }
             for f in files
         ]
         if not web_search:
-            # Stages 2 and 3 send identical history + PDFs with no tools, so
+            # Stages 2 and 3 send identical history + files with no tools, so
             # Stage 3 reads what Stage 2 wrote. Stage 1 is skipped: its tools
             # differ, so its cache entry would never be read back.
             blocks[-1]["cache_control"] = {"type": "ephemeral"}
@@ -111,7 +123,7 @@ async def _query_openai(
     model: str,
     messages: List[Dict[str, str]],
     timeout: float,
-    files: Optional[List[PdfFile]] = None,
+    files: Optional[List[Attachment]] = None,
     web_search: bool = False,
 ) -> Dict[str, Any]:
     headers = {
@@ -121,7 +133,9 @@ async def _query_openai(
     items: List[Dict[str, Any]] = [{"role": m["role"], "content": m["content"]} for m in messages]
     if files:
         parts = [
-            {"type": "input_file", "filename": f.filename, "file_data": "data:application/pdf;base64," + _b64(f)}
+            {"type": "input_image", "image_url": _data_url(f)}
+            if f.is_image
+            else {"type": "input_file", "filename": f.filename, "file_data": _data_url(f)}
             for f in files
         ]
         items[-1] = {
@@ -154,7 +168,7 @@ async def _query_gemini(
     model: str,
     messages: List[Dict[str, str]],
     timeout: float,
-    files: Optional[List[PdfFile]] = None,
+    files: Optional[List[Attachment]] = None,
     web_search: bool = False,
 ) -> Dict[str, Any]:
     headers = {
@@ -170,8 +184,8 @@ async def _query_gemini(
         for m in messages
     ]
     if files:
-        pdf_parts = [{"inline_data": {"mime_type": "application/pdf", "data": _b64(f)}} for f in files]
-        contents[-1]["parts"] = pdf_parts + contents[-1]["parts"]
+        file_parts = [{"inline_data": {"mime_type": f.media_type, "data": _b64(f)}} for f in files]
+        contents[-1]["parts"] = file_parts + contents[-1]["parts"]
     payload: Dict[str, Any] = {"contents": contents}
     if web_search:
         payload["tools"] = [{"google_search": {}}]
@@ -200,7 +214,7 @@ async def query_model(
     model: str,
     messages: List[Dict[str, str]],
     timeout: float = 300.0,
-    files: Optional[List[PdfFile]] = None,
+    files: Optional[List[Attachment]] = None,
     web_search: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """
@@ -235,7 +249,7 @@ async def query_model(
 async def query_models_parallel(
     models: List[str],
     messages: List[Dict[str, str]],
-    files: Optional[List[PdfFile]] = None,
+    files: Optional[List[Attachment]] = None,
     web_search: bool = False,
     timeout: float = 300.0,
 ) -> Dict[str, Optional[Dict[str, Any]]]:

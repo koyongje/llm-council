@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from .config import DATA_DIR, UPLOADS_DIR
-from .providers import PdfFile
+from .providers import Attachment
 
 
 logger = logging.getLogger(__name__)
@@ -186,23 +186,46 @@ def update_conversation_title(conversation_id: str, title: str):
     save_conversation(conversation)
 
 
-def _uploads_path(conversation_id: str, file_id: str) -> Path:
-    return Path(UPLOADS_DIR) / conversation_id / f"{file_id}.pdf"
+# Attachment types every provider accepts (Gemini has no GIF support), with
+# the extension used on disk
+FILE_EXTENSIONS = {
+    "application/pdf": "pdf",
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+}
 
 
-def add_file(conversation_id: str, filename: str, data: bytes) -> Dict[str, Any]:
+def detect_media_type(data: bytes) -> Optional[str]:
+    """Identify a supported attachment from its magic bytes, or None."""
+    if data.startswith(b"%PDF-"):
+        return "application/pdf"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def _uploads_path(conversation_id: str, file_id: str, media_type: str) -> Path:
+    return Path(UPLOADS_DIR) / conversation_id / f"{file_id}.{FILE_EXTENSIONS[media_type]}"
+
+
+def add_file(conversation_id: str, filename: str, data: bytes, media_type: str) -> Dict[str, Any]:
     """
-    Store a PDF for a conversation and record it in the conversation.
+    Store a PDF or image for a conversation and record it in the conversation.
 
     Returns:
-        File metadata dict: {id, filename, size, uploaded_at}
+        File metadata dict: {id, filename, size, media_type, uploaded_at}
     """
     conversation = get_conversation(conversation_id)
     if conversation is None:
         raise ValueError(f"Conversation {conversation_id} not found")
 
     file_id = uuid.uuid4().hex
-    path = _uploads_path(conversation_id, file_id)
+    path = _uploads_path(conversation_id, file_id, media_type)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
 
@@ -210,6 +233,7 @@ def add_file(conversation_id: str, filename: str, data: bytes) -> Dict[str, Any]
         "id": file_id,
         "filename": filename,
         "size": len(data),
+        "media_type": media_type,
         "uploaded_at": _now()
     }
     conversation["files"].append(entry)
@@ -217,16 +241,18 @@ def add_file(conversation_id: str, filename: str, data: bytes) -> Dict[str, Any]
     return entry
 
 
-def get_files(conversation_id: str) -> List[PdfFile]:
+def get_files(conversation_id: str) -> List[Attachment]:
     """Load the bytes of every file attached to a conversation."""
     conversation = get_conversation(conversation_id)
     if conversation is None:
         return []
     files = []
     for f in conversation.get("files", []):
-        path = _uploads_path(conversation_id, f["id"])
+        # Entries saved before image support have no media_type and are PDFs
+        media_type = f.get("media_type", "application/pdf")
+        path = _uploads_path(conversation_id, f["id"], media_type)
         try:
-            files.append(PdfFile(filename=f["filename"], data=path.read_bytes()))
+            files.append(Attachment(filename=f["filename"], data=path.read_bytes(), media_type=media_type))
         except FileNotFoundError:
             logger.warning("Skipping missing attachment %s for conversation %s", path, conversation_id)
     return files

@@ -19,19 +19,47 @@ export default function ChatInterface({
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  const handleFilePick = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
+  const uploadFiles = async (files) => {
     setIsUploading(true);
     try {
-      await onUploadFile(file);
+      for (const file of files) {
+        await onUploadFile(file);
+      }
       setUploadError('');
     } catch (err) {
       setUploadError(err.message);
     } finally {
       setIsUploading(false);
     }
+  };
+
+  const handleFilePick = (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) uploadFiles([file]);
+  };
+
+  // Pasted images (e.g. a screenshot) are attached like picked files. When the
+  // clipboard also holds text (copying from Word or Excel adds a picture of
+  // the selection), the text is pasted normally and the image is ignored.
+  const handlePaste = (e) => {
+    const data = e.clipboardData;
+    if (!data || data.types.includes('text/plain')) return;
+    const images = Array.from(data.files).filter((f) => f.type.startsWith('image/'));
+    if (images.length === 0) return;
+    e.preventDefault();
+    if (isUploading) return;
+    // Browsers name every pasted image "image.png"; give each a distinct name
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+    uploadFiles(
+      images.map((f, i) => {
+        const ext = f.type.split('/')[1] === 'jpeg' ? 'jpg' : f.type.split('/')[1];
+        const suffix = images.length > 1 ? `-${i + 1}` : '';
+        return new File([f], `clipboard-${stamp}${suffix}.${ext}`, { type: f.type });
+      })
+    );
   };
 
   const scrollToBottom = () => {
@@ -161,7 +189,7 @@ export default function ChatInterface({
         <input
           ref={fileInputRef}
           type="file"
-          accept="application/pdf"
+          accept="application/pdf,image/png,image/jpeg,image/webp"
           onChange={handleFilePick}
           hidden
         />
@@ -171,7 +199,7 @@ export default function ChatInterface({
           onClick={() => fileInputRef.current?.click()}
           disabled={isLoading || isUploading}
         >
-          {isUploading ? 'Uploading...' : 'Attach PDF'}
+          {isUploading ? 'Uploading...' : 'Attach file'}
         </button>
         <textarea
           className="message-input"
@@ -179,6 +207,7 @@ export default function ChatInterface({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           disabled={isLoading}
           rows={3}
         />

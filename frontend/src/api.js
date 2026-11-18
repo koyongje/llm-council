@@ -119,7 +119,7 @@ export const api = {
   },
 
   /**
-   * Upload a PDF reference file to a conversation.
+   * Upload a PDF or image (PNG, JPEG, WebP) reference file to a conversation.
    */
   async uploadFile(conversationId, file) {
     const form = new FormData();

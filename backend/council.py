@@ -1,7 +1,7 @@
 """3-stage LLM Council orchestration."""
 
 from typing import List, Dict, Any, Optional, Set, Tuple
-from .providers import query_models_parallel, query_model, PdfFile
+from .providers import query_models_parallel, query_model, Attachment
 from .config import TITLE_MODEL, STAGE1_TIMEOUT
 from .settings import get_council
 from .citations import format_sources, collect_verified_urls, mark_unverified
@@ -10,11 +10,11 @@ CHAIRMAN_ERROR_RESPONSE = "Error: Unable to generate final synthesis."
 ALL_FAILED_RESPONSE = "All models failed to respond. Please try again."
 
 STAGE1_INSTRUCTIONS = """---
-Instructions: Use web search to verify any figures, statistics or facts that may have changed recently, and prefer the most recent data. Next to each figure you state, put its source URL as a markdown link. If you could not verify a figure, mark it "출처 미확인". If documents are attached, base your review on their content."""
+Instructions: Use web search to verify any figures, statistics or facts that may have changed recently, and prefer the most recent data. Next to each figure you state, put its source URL as a markdown link. If you could not verify a figure, mark it "출처 미확인". If documents or images are attached, base your review on their content."""
 
 CHAIRMAN_URL_RULE = 'Use only URLs that appear in the council responses above; never invent new URLs. If a claim has no source, write "출처 미확인".'
 
-TABLE_INSTRUCTION = """The user attached document(s). Start with a 1-2 sentence summary, then present your answer as a markdown table with exactly these columns:
+TABLE_INSTRUCTION = """The user attached file(s) (documents or images). Start with a 1-2 sentence summary, then present your answer as a markdown table with exactly these columns:
 | # | 기획서 위치 | 현재 내용 | 수정 제안 (최신 데이터) | 근거·출처 |
 Add brief notes below the table only if needed. If the user's question is not a request for revisions (for example, a follow-up about one item), answer in free form instead."""
 
@@ -49,7 +49,7 @@ def build_stage1_prompt(user_query: str) -> str:
 async def stage1_collect_responses(
     user_query: str,
     history: Optional[List[Dict[str, str]]] = None,
-    files: Optional[List[PdfFile]] = None,
+    files: Optional[List[Attachment]] = None,
 ) -> List[Dict[str, Any]]:
     """
     Stage 1: Collect individual responses from all council models.
@@ -86,7 +86,7 @@ async def stage2_collect_rankings(
     user_query: str,
     stage1_results: List[Dict[str, Any]],
     history: Optional[List[Dict[str, str]]] = None,
-    files: Optional[List[PdfFile]] = None,
+    files: Optional[List[Attachment]] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
     """
     Stage 2: Each model ranks the anonymized responses.
@@ -171,7 +171,7 @@ async def stage3_synthesize_final(
     stage1_results: List[Dict[str, Any]],
     stage2_results: List[Dict[str, Any]],
     history: Optional[List[Dict[str, str]]] = None,
-    files: Optional[List[PdfFile]] = None,
+    files: Optional[List[Attachment]] = None,
     verified_urls: Optional[Set[str]] = None,
 ) -> Dict[str, Any]:
     """
@@ -224,7 +224,7 @@ Provide a clear, well-reasoned final answer that represents the council's collec
         chairman, messages, files=files or [], web_search=False
     )
     if response is None and files:
-        # Large PDFs can push the request over a provider limit; the stage 1
+        # Large attachments can push the request over a provider limit; the stage 1
         # responses already carry the file's content, so retry without them.
         response = await query_model(chairman, messages, files=[], web_search=False)
 
@@ -364,7 +364,7 @@ Title:"""
 async def run_full_council(
     user_query: str,
     prior_messages: Optional[List[Dict[str, Any]]] = None,
-    files: Optional[List[PdfFile]] = None,
+    files: Optional[List[Attachment]] = None,
 ) -> Tuple[List, List, Dict, Dict]:
     """
     Run the complete 3-stage council process.
